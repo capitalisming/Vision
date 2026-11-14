@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Camera and baseline: dev harness</title>
+  <style>
+    body { font: 15px system-ui, sans-serif; margin: 16px; max-width: 900px; }
+    section { border-top: 1px solid #ccc; padding-top: 8px; margin-top: 16px; }
+    td, th { border: 1px solid #ddd; padding: 2px 6px; }
+  </style>
+</head>
+<body>
+  <!-- Stand-ins for the containers participant 1 creates in the real app. -->
+  <p>Dev harness. Sessions: <input type="file" id="load" accept=".json"> (JSON array; default: synthetic demo data)
+    · <button id="start-camera">Start camera screen</button></p>
+  <section id="screen-camera"></section>
+  <section id="screen-trend"></section>
+  <section><h2>Action</h2><div id="screen-action"></div></section>
+
+  <script type="module">
+    import { mountCameraCalib } from './src/camera-calib.js';
+    import { renderTrend } from './src/ui-trend.js';
+    import { renderAction } from './src/ui-action.js';
+    import { computeBaseline, classify, eligibleSessions, BASELINE_N } from './src/baseline.js';
+
+    const showLatest = (filtered) => {
+      const latest = filtered[filtered.length - 1];
+      if (!latest) return;
+      const state = classify(latest, computeBaseline(filtered), filtered[filtered.length - 2]);
+      const needed = Math.max(0, BASELINE_N - eligibleSessions(filtered).length);
+      renderAction(document.getElementById('screen-action'), { state, needed });
+    };
+    const show = (sessions) => renderTrend(document.getElementById('screen-trend'), sessions, showLatest);
+
+    show(await (await fetch('./test/demo-sessions.json')).json());
+    document.getElementById('load').addEventListener('change', async (e) => {
+      show(JSON.parse(await e.target.files[0].text()));
+    });
+    document.getElementById('start-camera').addEventListener('click', () => mountCameraCalib());
+  </script>
+</body>
+</html>
