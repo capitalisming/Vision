@@ -52,25 +52,32 @@ export function mountScreenCalibration(root, opts = {}) {
   let width = saved ? saved * CARD_WIDTH_MM : DEFAULT_WIDTH_PX;
 
   root.innerHTML = `
-    <h2>Screen calibration</h2>
-    <p class="hint">Keep browser zoom at 100%. Hold a bank card (ID-1, 85.60 × 53.98 mm) flat against the screen
-      and resize the rectangle until it matches the card edges exactly. Then press Save.</p>
-    <div class="calib-stage"><div class="card-rect" aria-label="Card outline"></div></div>
-    <div class="calib-controls">
-      <button type="button" data-step="-1" aria-label="Smaller">−</button>
-      <input type="range" min="${MIN_WIDTH_PX}" max="${MAX_WIDTH_PX}" step="0.5" aria-label="Card width">
-      <button type="button" data-step="1" aria-label="Larger">+</button>
-      <span class="calib-readout"></span>
-    </div>
-    <p class="hint">Keyboard: ← → change by 0.5 px, Shift + ← → by 5 px.</p>
-    <div class="row">
-      <button type="button" class="primary" data-action="save">Save</button>
-      <span class="calib-status" role="status"></span>
-    </div>
-    <h3>Check with a ruler</h3>
-    <p class="hint">After saving, the bar below must measure exactly 100 mm with a ruler (tolerance ±1 mm).</p>
-    <div class="ruler-wrap"><div class="ruler-100" aria-label="100 mm check bar"></div></div>
-    <p class="ruler-label"></p>`;
+    <h1>Screen calibration</h1>
+    <div class="calib">
+      <p class="lede">Keep browser zoom at 100%. Hold a bank card flat against the screen and resize the outline
+        until it matches the card edges exactly. Then press Save.</p>
+      <div class="calib-stage"><div class="card-rect" aria-label="Card outline"></div></div>
+      <div class="panel">
+        <div class="calib-controls">
+          <button type="button" data-step="-1" aria-label="Smaller">−</button>
+          <input type="range" min="${MIN_WIDTH_PX}" max="${MAX_WIDTH_PX}" step="0.5" aria-label="Card width">
+          <button type="button" data-step="1" aria-label="Larger">+</button>
+          <span class="calib-readout"></span>
+        </div>
+        <p class="hint kbd-hint">Arrow keys change by 0.5 px, Shift + arrow by 5 px.</p>
+        <div class="row">
+          <button type="button" class="primary" data-action="save">Save</button>
+          <span class="calib-status" role="status"></span>
+          <button type="button" class="ghost" data-nav="screen-setup" data-role="next" hidden>Next: new session</button>
+        </div>
+      </div>
+      <div class="panel">
+        <h2>Check with a ruler</h2>
+        <p class="hint ruler-hint"></p>
+        <div class="ruler-wrap"><div class="ruler-100"></div></div>
+        <p class="ruler-label"></p>
+      </div>
+    </div>`;
 
   const rect = root.querySelector('.card-rect');
   const slider = root.querySelector('input[type=range]');
@@ -78,6 +85,8 @@ export function mountScreenCalibration(root, opts = {}) {
   const status = root.querySelector('.calib-status');
   const ruler = root.querySelector('.ruler-100');
   const rulerLabel = root.querySelector('.ruler-label');
+  const rulerHint = root.querySelector('.ruler-hint');
+  const rulerWrap = root.querySelector('.ruler-wrap');
 
   function render() {
     width = Math.min(MAX_WIDTH_PX, Math.max(MIN_WIDTH_PX, width));
@@ -87,14 +96,20 @@ export function mountScreenCalibration(root, opts = {}) {
     readout.textContent = `${width.toFixed(1)} px = ${(width / CARD_WIDTH_MM).toFixed(3)} px/mm`;
     const p = getPxPerMm();
     if (p) {
-      ruler.style.width = `${100 * p}px`;
+      // 100 mm when it fits, otherwise 50 mm so the whole bar can be measured on a narrow screen.
+      const lengthMm = rulerWrap.clientWidth > 0 && 100 * p > rulerWrap.clientWidth ? 50 : 100;
+      ruler.style.width = `${lengthMm * p}px`;
+      ruler.style.setProperty('--mm', String(lengthMm));
+      ruler.setAttribute('aria-label', `${lengthMm} mm check bar`);
       ruler.hidden = false;
-      rulerLabel.textContent = `Saved: ${p.toFixed(4)} CSS px/mm. Bar width ${(100 * p).toFixed(1)} CSS px.`;
+      rulerHint.textContent = `After saving, the bar must measure ${lengthMm} mm (±1 mm).`;
+      rulerLabel.textContent = `Saved: ${p.toFixed(4)} CSS px/mm. Bar width ${(lengthMm * p).toFixed(1)} CSS px.`;
       if (calibrationDprChanged()) {
         rulerLabel.textContent += ' Warning: browser zoom changed since calibration — recalibrate.';
       }
     } else {
       ruler.hidden = true;
+      rulerHint.textContent = 'Save first, then check the bar with a ruler.';
       rulerLabel.textContent = 'Not calibrated yet.';
     }
   }
@@ -119,6 +134,7 @@ export function mountScreenCalibration(root, opts = {}) {
       const p = savePxPerMmFromCardWidth(width);
       status.textContent = 'Saved.';
       status.className = 'calib-status ok';
+      root.querySelector('[data-role=next]').hidden = false;
       render();
       opts.onSaved?.(p);
     } catch (err) {
