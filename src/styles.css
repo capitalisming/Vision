@@ -214,13 +214,11 @@ details.more[open] > summary { margin-bottom: -8px; }
 .form-errors:empty { display: none; }
 .form-errors li { color: var(--danger); font-size: 0.875rem; }
 .setup .row { margin-top: 0; }
-/* Camera choice only matters for camera distance; the Pi address only for the Pi camera. */
-#setup-form:not(:has([name=distanceMode][value=camera]:checked)) :is(.camera-only, .pi-only),
-#setup-form:not(:has([name=cameraSource][value=pi]:checked)) .pi-only { display: none; }
-.pi-status { font-size: 0.875rem; color: var(--muted); }
-.pi-status.is-ok { color: var(--ok); }
-.pi-status.is-error { color: var(--danger); }
-.pi-preview { display: block; width: 100%; max-width: 360px; border-radius: 14px; background: #000; }
+/* The camera line only matters when the distance is measured by the camera. */
+#setup-form:not(:has([name=distanceMode][value=camera]:checked)) .camera-only { display: none; }
+/* Camera screen: choice of camera above the calibration view. */
+.camera-pick { display: grid; gap: 16px; margin: 20px 0 28px; }
+.camera-pick:not(:has([name=cameraSource][value=pi]:checked)) .pi-address { display: none; }
 
 /* ---------- screen calibration ---------- */
 .calib { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; margin-top: 28px; }
@@ -292,6 +290,34 @@ dl.kv dt:last-of-type, dl.kv dd:last-of-type { border-bottom: 0; }
 .screen-owned:empty { display: grid; place-items: center; min-height: 50vh; margin-top: 24px; border-radius: 20px; box-shadow: inset 0 0 0 1px var(--line); }
 .screen-owned:empty[hidden] { display: none; }
 .screen-owned:empty::before { content: attr(data-title) " is not available in this build"; color: var(--muted); padding: 16px; text-align: center; }
+
+/* ---------- screens written by participant 2 (camera, trend, action): their inline light-theme colours ---------- */
+.screen-owned > h2, #screen-action > h2 { font-size: clamp(2.2rem, 1.5rem + 3vw, 3.4rem); font-weight: 300; letter-spacing: -0.03em; margin: 0 0 20px; }
+.screen-owned h3 { font-weight: 400; color: var(--muted); margin: 32px 0 12px; }
+.screen-owned select {
+  font: inherit; color: var(--ink); min-height: 40px; padding: 6px 12px; border: 0; border-radius: 12px;
+  background: var(--field); box-shadow: inset 0 0 0 1px var(--line-2);
+}
+.screen-owned label { color: var(--muted); font-size: 0.875rem; }
+#screen-camera input:not([type=radio]):not([type=checkbox]) { width: 9em; min-height: 40px; }
+#screen-camera .camera-pick input:not([type=radio]) { width: 100%; max-width: 360px; min-height: 50px; }
+#screen-camera .calib-instr { font-size: 1rem !important; color: var(--muted); }
+#screen-camera .calib-live { font-weight: 300 !important; }
+#screen-camera .calib-form { margin: 16px 0; }
+.rec-table th, .rec-table td { border: 0 !important; border-bottom: 1px solid var(--line) !important; padding: 8px 10px !important; text-align: left; font-size: 0.875rem; }
+.rec-table td[style*="#c00"] { color: var(--danger) !important; }
+.trend-legend, .action-disclaimer { color: var(--muted) !important; }
+.trend-chart svg { overflow: visible; }
+.trend-chart circle[fill="#333"] { fill: var(--ink); }
+.trend-chart circle[fill="#d32f2f"] { fill: var(--danger); stroke: var(--bg); }
+.trend-chart [fill="#777"] { fill: var(--faint); }
+.trend-chart rect[fill="#4a90d9"] { fill: var(--accent); }
+.trend-chart line[stroke="#4a90d9"] { stroke: var(--accent); }
+.action-message { font-weight: 300 !important; letter-spacing: -0.02em; }
+.action-message[data-state="within"] { color: var(--ok) !important; }
+.action-message[data-state="single"] { color: var(--warn) !important; }
+.action-message[data-state="persistent"] { color: var(--danger) !important; }
+.action-message[data-state="insufficient"], .action-message[data-state="not_measurable"] { color: var(--ink) !important; }
 
 /* ---------- touch and small screens ---------- */
 .touch-only { display: none; }

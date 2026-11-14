@@ -7,6 +7,10 @@ import { runAcuityTest } from './acuity-test.js';
 import { paintIris } from './iris.js';
 import { initHomeScroll } from './home-scroll.js';
 import { connectPiCamera, normalizePiUrl } from './pi-camera.js';
+import { loadCameraSettings, saveCameraSettings, cameraId, describeCamera } from './camera-source.js';
+import { renderTrend } from './ui-trend.js';
+import { renderAction } from './ui-action.js';
+import { toBaselineSessions, latestAction } from './trend-data.js';
 import { listSessions, saveSession, deleteSession, exportCsv, exportJson, importJson } from './storage.js';
 
 const state = {
@@ -14,9 +18,8 @@ const state = {
   testRunning: false,
   lastSession: null,
   distance: null, // participant 2's src/distance.js module, loaded on first camera-mode session
-  piCamera: null, // Raspberry Pi feed into #camera-video while a camera test runs
-  piPreview: null, // Raspberry Pi feed into the setup preview after "Check camera"
-  piTimer: 0,
+  camera: loadCameraSettings(), // which camera measures the distance: this computer or a Raspberry Pi
+  piCamera: null, // the running Raspberry Pi feed, if any
 };
 
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -42,6 +45,9 @@ const enterHandlers = {
   'screen-home': renderHome,
   'screen-log': renderLog,
   'screen-calib': () => mountScreenCalibration($('#screen-calib'), { onSaved: renderHome }),
+  'screen-camera': enterCamera,
+  'screen-trend': enterTrend,
+  'screen-action': enterAction,
   'screen-setup': enterSetup,
   'screen-result': renderResult,
 };
@@ -55,7 +61,7 @@ function show(id) {
     b.classList.toggle('active', Boolean(b.closest('nav')) && b.dataset.nav === id);
   });
   document.title = `${target.dataset.title} · Vision self-check`;
-  if (id !== 'screen-setup') stopPiPreview();
+  if (id !== 'screen-camera' && id !== 'screen-test') stopPiCamera(); // no polling in the background
   state.screen = id;
   window.scrollTo(0, 0); // every screen starts at its top
   clearError();
@@ -232,8 +238,6 @@ function readForm() {
     condition: String(fd.get('condition') ?? '').trim(),
     targetMm: Number(fd.get('targetMm')),
     distanceMode: fd.get('distanceMode'),
-    cameraSource: fd.get('cameraSource') ?? 'local',
-    piUrl: String(fd.get('piUrl') ?? ''),
   };
 }
 
@@ -246,9 +250,6 @@ function validateSetup(v, pxPerMm) {
   if (!v.condition || v.condition.length > 40 || /[\r\n]/.test(v.condition)) errs.push('Condition label is required (max 40 characters).');
   if (!Number.isInteger(v.targetMm) || v.targetMm < 200 || v.targetMm > 6000) errs.push('Target distance must be a whole number of mm between 200 and 6000.');
   if (!['manual', 'camera'].includes(v.distanceMode)) errs.push('Choose a distance source.');
-  if (v.distanceMode === 'camera' && v.cameraSource === 'pi') {
-    try { normalizePiUrl(v.piUrl, location.origin); } catch (err) { errs.push(err.message); }
-  }
   return errs;
 }
 
@@ -270,6 +271,13 @@ form.addEventListener('input', () => { $('.form-errors').textContent = ''; });
 function enterSetup() {
   $('.form-errors').textContent = '';
   updateFloorHint();
+  let camera;
+  try {
+    camera = describeCamera(state.camera, location.origin);
+  } catch {
+    camera = 'a Raspberry Pi with an invalid address';
+  }
+  $('[data-role=camera-summary]').textContent = `Camera: ${camera}.`;
 }
 
 form.addEventListener('submit', async (e) => {
@@ -294,31 +302,26 @@ async function loadDistanceModule() {
   } catch (err) {
     throw new Error(`Camera mode is not available: src/distance.js could not be loaded (${err.message}). Use manual mode.`);
   }
-  if (typeof mod.getDistance !== 'function') {
-    throw new Error('Camera mode is not available: src/distance.js does not export getDistance(). Use manual mode.');
-  }
   state.distance = mod;
   return mod;
 }
 
 async function startTest(v) {
   let getDistance;
+  let cameraMod = null;
   if (v.distanceMode === 'manual') {
     const mm = v.targetMm;
     getDistance = () => ({ mm, ageMs: 0, ok: true, reason: '' });
   } else {
     try {
-      const video = $('#camera-video');
-      if (v.cameraSource === 'pi') {
-        stopPiPreview();
-        stopPiCamera();
-        state.piCamera = await connectPiCamera(video, normalizePiUrl(v.piUrl, location.origin));
+      cameraMod = await prepareCamera();
+      if (!cameraMod.getK(v.participant)) {
+        throw new Error(`There is no distance calibration for ${v.participant} with ${describeCamera(state.camera, location.origin)}. ` +
+          'Calibrate on the Camera screen first.');
       }
-      const mod = await loadDistanceModule();
-      // With the Pi source the video element already plays the Pi stream; distance.js must use it as it is
-      // (to be agreed with participant 2: startDistance(videoEl) must not replace an existing srcObject).
-      if (typeof mod.startDistance === 'function') await mod.startDistance(video);
-      getDistance = mod.getDistance;
+      cameraMod.setParticipant(v.participant);
+      await cameraMod.startDistance($('#camera-video'));
+      getDistance = () => cameraMod.getDistance(v.participant);
     } catch (err) {
       stopPiCamera();
       showError(err.message); // Failure D: no camera data, no test, no number.
@@ -347,6 +350,7 @@ async function startTest(v) {
   state.testRunning = false;
   document.body.classList.remove('testing');
   stopPiCamera();
+  if (cameraMod) session.cam_k = cameraMod.getK(v.participant); // the calibration this distance was measured with
 
   try {
     saveSession(session);
@@ -357,51 +361,121 @@ async function startTest(v) {
   show('screen-result');
 }
 
-// ---------- Raspberry Pi camera ----------
+// ---------- camera ----------
 
 function stopPiCamera() {
   state.piCamera?.stop();
   state.piCamera = null;
 }
 
-function stopPiPreview() {
-  clearInterval(state.piTimer);
-  state.piPreview?.stop();
-  state.piPreview = null;
-  $('.pi-preview').hidden = true;
+// How a Raspberry Pi stream gets into a <video>; handed to src/distance.js as its camera provider.
+async function piProvider(videoEl) {
+  stopPiCamera();
+  videoEl.srcObject?.getTracks?.().forEach((track) => track.stop()); // let go of the webcam if it was in use
+  state.piCamera = await connectPiCamera(videoEl, normalizePiUrl(state.camera.piUrl, location.origin));
 }
 
-$('[data-action=pi-check]').addEventListener('click', async () => {
-  const status = $('.pi-status');
-  const say = (text, tone = '') => { status.textContent = text; status.className = `pi-status ${tone}`; };
-  stopPiPreview();
-  let base;
+/** Load src/distance.js and tell it which camera to use; returns the module. */
+async function prepareCamera() {
+  const mod = await loadDistanceModule();
+  const id = cameraId(state.camera, location.origin); // throws for an invalid Pi address
+  mod.setCameraProvider(state.camera.source === 'pi' ? piProvider : null, id);
+  return mod;
+}
+
+async function enterCamera() {
+  const container = $('#screen-camera');
+  stopPiCamera();
+  container.textContent = '';
   try {
-    base = normalizePiUrl(form.piUrl.value, location.origin);
+    await prepareCamera();
+    (await import('./camera-calib.js')).mountCameraCalib(container);
   } catch (err) {
-    say(err.message, 'is-error');
+    container.textContent = '';
+    container.append(Object.assign(document.createElement('h1'), { textContent: 'Camera' }));
+    showError(err.message);
+  }
+  mountCameraPicker(container);
+}
+
+// Choice of camera, shown at the top of the Camera screen: calibration and tests then use the same camera.
+function mountCameraPicker(container) {
+  const wrap = document.createElement('div');
+  wrap.className = 'camera-pick';
+  wrap.innerHTML = `
+    <div class="seg">
+      <label><input type="radio" name="cameraSource" value="local"><span>This computer</span></label>
+      <label><input type="radio" name="cameraSource" value="pi"><span>Raspberry Pi</span></label>
+    </div>
+    <label class="field pi-address">
+      <span class="label">Raspberry Pi address</span>
+      <input name="piUrl" autocomplete="off" inputmode="url" placeholder="raspberrypi.local:8000">
+      <small>Leave empty when this page is opened from the Pi.</small>
+    </label>
+    <p class="hint">Each camera has its own distance calibration.</p>`;
+  wrap.querySelector(`[name=cameraSource][value=${state.camera.source}]`).checked = true;
+  wrap.querySelector('[name=piUrl]').value = state.camera.piUrl;
+  wrap.addEventListener('change', () => {
+    const next = {
+      source: wrap.querySelector('[name=cameraSource]:checked').value,
+      piUrl: wrap.querySelector('[name=piUrl]').value.trim(),
+    };
+    try {
+      if (next.source === 'pi') normalizePiUrl(next.piUrl, location.origin);
+    } catch (err) {
+      showError(err.message);
+      return;
+    }
+    clearError();
+    saveCameraSettings(next);
+    state.camera = next;
+    enterCamera();
+  });
+  const title = container.querySelector('h1, h2');
+  if (title) title.after(wrap); else container.prepend(wrap);
+}
+
+// ---------- trend and action ----------
+
+function readSessions() {
+  try {
+    return listSessions();
+  } catch (err) {
+    showError(err.message);
+    return [];
+  }
+}
+
+function emptyScreen(container, title, text) {
+  container.textContent = '';
+  container.append(
+    Object.assign(document.createElement('h1'), { textContent: title }),
+    Object.assign(document.createElement('p'), { className: 'hint', textContent: text }),
+  );
+}
+
+function enterTrend() {
+  const container = $('#screen-trend');
+  const sessions = toBaselineSessions(readSessions());
+  if (!sessions.length) {
+    emptyScreen(container, 'Trend', 'No tests to show yet. Practice tests are left out of the trend.');
     return;
   }
-  say(`Connecting to ${base}…`);
-  try {
-    const preview = $('.pi-preview');
-    state.piPreview = await connectPiCamera(preview, base);
-    preview.hidden = false;
-    const tick = () => {
-      const s = state.piPreview?.status();
-      if (!s) return;
-      if (s.state === 'live') {
-        say(`Live · ${s.width}×${s.height} · ${s.fps.toFixed(0)} fps · frame ${Math.round(s.ageMs)} ms old`, 'is-ok');
-      } else {
-        say(`Connection lost: ${s.error}`, 'is-error');
-      }
-    };
-    tick();
-    state.piTimer = setInterval(tick, 1000);
-  } catch (err) {
-    say(err.message, 'is-error');
+  renderTrend(container, sessions);
+}
+
+function enterAction() {
+  const container = $('#screen-action');
+  const info = latestAction(readSessions());
+  if (!info) {
+    emptyScreen(container, 'Action', 'Take a test first. Advice compares your newest test with your own baseline.');
+    return;
   }
-});
+  container.innerHTML = '<h2>Action</h2><div class="action-body"></div>';
+  renderAction(container.querySelector('.action-body'), { state: info.state, needed: info.needed });
+  // The "Why this test" text is still a placeholder from src/ui-action.js; do not show it to users yet.
+  container.querySelector('.action-why')?.remove();
+}
 
 // ---------- result ----------
 

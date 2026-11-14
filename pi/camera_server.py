@@ -198,6 +198,12 @@ def open_source(kind, width, height, fps, device):
 class Handler(SimpleHTTPRequestHandler):
     """/frame and /health for the camera; everything else is a static file of the app."""
 
+    # The app loads WebAssembly and ES modules (MediaPipe); browsers refuse them under the wrong type.
+    extensions_map = {
+        **SimpleHTTPRequestHandler.extensions_map,
+        '.wasm': 'application/wasm', '.mjs': 'text/javascript', '.js': 'text/javascript',
+        '.task': 'application/octet-stream',
+    }
     buffer = None
     source_name = ''
     frame_size = (0, 0)

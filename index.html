@@ -123,12 +123,12 @@
             <summary>Study options</summary>
             <label class="field">
               <span class="label">Condition</span>
-              <input name="condition" required maxlength="40" list="condition-list" autocomplete="off" value="practice">
+              <input name="condition" required maxlength="40" list="condition-list" autocomplete="off" value="self_check">
               <datalist id="condition-list">
                 <option value="practice"><option value="rep"><option value="dose_noglasses">
                 <option value="dose_glasses"><option value="e2e_glasses"><option value="e2e_noglasses">
               </datalist>
-              <small>Practice tests are kept in the log but left out of the analysis.</small>
+              <small>Your own tests count toward your baseline. Tests marked practice stay in the log only. The research analysis reads only the study conditions (rep, dose_*).</small>
             </label>
             <fieldset class="field"><legend class="label">Distance measured by</legend>
               <div class="seg">
@@ -136,23 +136,9 @@
                 <label><input type="radio" name="distanceMode" value="camera"><span>Camera</span></label>
               </div>
             </fieldset>
-            <fieldset class="field camera-only"><legend class="label">Camera</legend>
-              <div class="seg">
-                <label><input type="radio" name="cameraSource" value="local" checked><span>This computer</span></label>
-                <label><input type="radio" name="cameraSource" value="pi"><span>Raspberry Pi</span></label>
-              </div>
-            </fieldset>
-            <div class="field pi-only">
-              <label class="field">
-                <span class="label">Raspberry Pi address</span>
-                <input name="piUrl" autocomplete="off" inputmode="url" placeholder="raspberrypi.local:8000">
-                <small>Leave empty when this page is opened from the Pi (pi/camera_server.py).</small>
-              </label>
-              <div class="row">
-                <button type="button" class="small" data-action="pi-check">Check camera</button>
-                <span class="pi-status" role="status"></span>
-              </div>
-              <video class="pi-preview" muted playsinline hidden></video>
+            <div class="field camera-only">
+              <p class="hint" data-role="camera-summary"></p>
+              <button type="button" class="link" data-nav="screen-camera">Choose or calibrate the camera</button>
             </div>
           </details>
 

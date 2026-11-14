@@ -75,6 +75,13 @@ class ServerTest(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual((info['source'], info['width'], info['height'], info['frames']), ('fake', 32, 24, 1))
 
+    def test_app_files_have_the_types_the_browser_needs(self):
+        for path, expected in (('/src/app.js', 'text/javascript'), ('/vendor/mediapipe/vision_bundle.mjs', 'text/javascript'),
+                               ('/vendor/mediapipe/wasm/vision_wasm_internal.wasm', 'application/wasm')):
+            _, headers, _ = _get(self.base + path)
+            content_type = {k.lower(): v for k, v in headers.items()}['content-type']
+            self.assertTrue(content_type.startswith(expected), (path, content_type))
+
     def test_serves_the_app_but_not_dot_files_or_listings(self):
         status, _, body = _get(self.base + '/index.html')
         self.assertEqual(status, 200)
