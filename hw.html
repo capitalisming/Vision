@@ -1,0 +1,246 @@
+<!-- AI-assisted (Claude Code), reviewed by a team member. -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sensor module check</title>
+<style>
+  :root { --bg: #ffffff; --fg: #1f2328; --muted: #656d76; --line: #d0d7de; --ok: #1a7f37; --bad: #cf222e; --accent: #0969da; --panel: #f6f8fa; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #0d1117; --fg: #e6edf3; --muted: #8b949e; --line: #30363d; --ok: #3fb950; --bad: #f85149; --accent: #58a6ff; --panel: #161b22; } }
+  * { box-sizing: border-box; }
+  body { margin: 0 auto; max-width: 960px; padding: 16px; background: var(--bg); color: var(--fg); font: 16px/1.45 system-ui, sans-serif; }
+  h1 { font-size: 22px; } h2 { font-size: 18px; margin: 0 0 8px; }
+  section { border: 1px solid var(--line); border-radius: 8px; padding: 16px; margin: 16px 0; background: var(--panel); }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  input, select, button { font: inherit; padding: 6px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg); }
+  button { cursor: pointer; } button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  button:disabled { opacity: .5; cursor: default; }
+  .big { font-size: clamp(40px, 10vw, 72px); font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.1; }
+  .unit { font-size: .35em; color: var(--muted); font-weight: 400; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; }
+  .muted { color: var(--muted); } .ok { color: var(--ok); } .bad { color: var(--bad); }
+  table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; font-size: 14px; }
+  th, td { border-bottom: 1px solid var(--line); padding: 4px 6px; text-align: right; } th:first-child, td:first-child { text-align: left; }
+  .scroll { overflow-x: auto; max-height: 320px; overflow-y: auto; }
+  video { width: 160px; border-radius: 6px; transform: scaleX(-1); display: none; }
+</style>
+</head>
+<body>
+<h1>Optional sensor module: check page</h1>
+<p class="muted">Reads the HC-SR04 on the Raspberry Pi over WebSocket. Open this page from the laptop's local server
+(<code>node serve.mjs</code>, then <code>http://localhost:8000/hw.html</code>): an https page cannot connect to the Pi.</p>
+
+<section>
+  <h2>1. Connect</h2>
+  <div class="row">
+    <label for="url">Pi address</label>
+    <input id="url" size="28" spellcheck="false">
+    <button id="connect" class="primary">Connect</button>
+    <button id="disconnect">Disconnect</button>
+  </div>
+  <p id="connState" class="muted">Not connected.</p>
+</section>
+
+<section>
+  <h2>2. Live reading</h2>
+  <div class="grid">
+    <div><div class="muted">Distance (calibrated, 0.5 s median)</div><div class="big"><span id="mm">—</span> <span class="unit">mm</span></div><div id="reason" class="muted"></div></div>
+    <div><div class="muted">Raw sensor (0.5 s median)</div><div class="big"><span id="raw">—</span> <span class="unit">mm</span></div><div id="offset" class="muted"></div></div>
+    <div><div class="muted">Light (camera estimate, not a light meter)</div><div class="big"><span id="lux">—</span> <span class="unit">lux</span></div></div>
+  </div>
+</section>
+
+<section>
+  <h2>3. Calibrate (once per sensor mounting)</h2>
+  <p>Sit so that your eyes are 500 mm from the screen (measure with a ruler), press Save.</p>
+  <div class="row">
+    <button id="calibrate" class="primary">Save</button>
+    <button id="clearCal">Clear calibration</button>
+    <span id="calMsg" class="muted"></span>
+  </div>
+</section>
+
+<section>
+  <h2>4. Experiment 5: sensor vs tape</h2>
+  <p class="muted">The leader measures the tape distance from the outer eye corner to the screen. Press Record three times per
+  distance; between presses the participant leans back and sits again. Left eye covered with an eye patch; hands off the desk in front of the sensor.</p>
+  <div class="row">
+    <label>Participant <select id="participant"><option>A</option><option>B</option><option>M</option></select></label>
+    <label>Glasses <select id="glasses"><option value="no">no</option><option value="yes">yes</option></select></label>
+    <label>Tape, mm <input id="tape" type="number" min="100" max="2000" step="1" style="width:7em"></label>
+    <span class="row" id="tapePresets"></span>
+  </div>
+  <div class="row" style="margin-top:8px">
+    <button id="record" class="primary">Record</button>
+    <button id="undo">Delete last row</button>
+    <button id="export">Export sensor_check.csv</button>
+    <button id="clearRows">Clear all rows</button>
+    <span id="recMsg" class="muted"></span>
+  </div>
+  <div class="row" style="margin-top:8px">
+    <button id="camStart">Start laptop camera (optional)</button>
+    <video id="video" muted playsinline></video>
+    <span id="camMsg" class="muted">Camera column stays empty unless the laptop camera is started and calibrated for this participant in the app.</span>
+  </div>
+  <h2 style="margin-top:16px">Error per tape distance</h2>
+  <p class="muted">error % = (sensorMm − tapeMm) / tapeMm × 100. Criterion fixed before the first measurement: mean absolute error ≤ 10 % at every distance.</p>
+  <div class="scroll"><table id="summary"></table></div>
+  <h2 style="margin-top:16px">Rows (<span id="nRows">0</span>)</h2>
+  <div class="scroll"><table id="rows"></table></div>
+</section>
+
+<script type="module">
+import {
+  DEFAULT_URL, canUseSensor, connectSensor, disconnectSensor, calibrateSensor, clearSensorCalibration,
+  getSensorDistance, getSensorOffset, getAmbient, getSensorStatus, onSensorChange,
+  SENSOR_CHECK_COLUMNS, sensorCheckCsv, summarizeSensorCheck,
+} from './src/hw-link.js';
+
+const $ = (id) => document.getElementById(id);
+const URL_KEY = 'sensor_url';
+const ROWS_KEY = 'sensor_check_rows_v1';
+const TAPE_MARKS = [300, 400, 500, 670, 1000];
+const store = {
+  get(k) { try { return localStorage.getItem(k); } catch { return null; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch { /* private mode: keep in memory only */ } },
+};
+
+// Address: last used, else the Pi's name in our setup (vision.local), else the contract default.
+$('url').value = store.get(URL_KEY) || 'ws://vision.local:8765';
+$('url').placeholder = DEFAULT_URL;
+const normalizeUrl = (s) => { s = s.trim(); if (!s) return DEFAULT_URL; if (!/^wss?:\/\//.test(s)) s = 'ws://' + s; if (!/:\d+(\/|$)/.test(s.replace(/^wss?:\/\//, ''))) s = s.replace(/\/?$/, ':8765'); return s; };
+
+function showConn() {
+  const s = getSensorStatus();
+  const el = $('connState');
+  if (!s.canUse) { el.textContent = 'needs_localhost: this page is served over https. Open it from http://localhost (node serve.mjs).'; el.className = 'bad'; return; }
+  const text = { idle: 'Not connected.', connecting: `Connecting to ${s.url}…`, open: `Connected to ${s.url}.`, closed: `Not connected to ${s.url}; retrying every 2 s.` }[s.status];
+  const extra = s.status === 'open' ? ` Camera on Pi: ${s.camera === null ? '?' : s.camera ? 'yes' : 'no'}.` : '';
+  el.textContent = text + extra;
+  el.className = s.status === 'open' ? 'ok' : s.status === 'idle' ? 'muted' : 'bad';
+}
+onSensorChange(showConn);
+showConn();
+
+$('connect').onclick = () => {
+  const url = normalizeUrl($('url').value);
+  $('url').value = url;
+  store.set(URL_KEY, url);
+  connectSensor(url).catch(() => { /* status line shows the reason; retries run in the background */ });
+};
+$('disconnect').onclick = () => disconnectSensor();
+
+// ---- live view ----
+const fmt = (x, d = 0) => (x === null || x === undefined || !Number.isFinite(x) ? '—' : x.toFixed(d));
+function tick() {
+  const d = getSensorDistance();
+  const a = getAmbient();
+  $('mm').textContent = fmt(d.mm);
+  $('raw').textContent = fmt(d.rawMm);
+  $('reason').textContent = d.ok ? `age ${fmt(d.ageMs)} ms` : `reason: ${d.reason}`;
+  $('reason').className = d.ok ? 'ok' : 'bad';
+  const off = getSensorOffset();
+  $('offset').textContent = off === null ? 'not calibrated' : `offset ${off >= 0 ? '+' : ''}${fmt(off, 1)} mm`;
+  $('lux').textContent = fmt(a.lux, 1);
+  requestAnimationFrame(tick);
+}
+requestAnimationFrame(tick);
+
+$('calibrate').onclick = () => {
+  try {
+    const off = calibrateSensor(500);
+    $('calMsg').textContent = `Saved: offset ${off >= 0 ? '+' : ''}${off.toFixed(1)} mm.`;
+    $('calMsg').className = 'ok';
+  } catch (e) {
+    $('calMsg').textContent = e.message;
+    $('calMsg').className = 'bad';
+  }
+};
+$('clearCal').onclick = () => { clearSensorCalibration(); $('calMsg').textContent = 'Calibration cleared.'; $('calMsg').className = 'muted'; };
+
+// ---- optional laptop camera (distance.js, unchanged) ----
+let cam = null;
+$('camStart').onclick = async () => {
+  $('camMsg').textContent = 'Starting camera…';
+  try {
+    cam = await import('./src/distance.js');
+    $('video').style.display = 'block';
+    await cam.startDistance($('video'));
+    $('camMsg').textContent = 'Camera running. Its distance is written only for a participant calibrated in the app on this computer.';
+  } catch (e) {
+    cam = null;
+    $('camMsg').textContent = `Camera not available: ${e.message}`;
+  }
+};
+function cameraMm(participant) {
+  if (!cam) return '';
+  const d = cam.getDistance(participant);
+  return d.ok ? Math.round(d.mm) : '';
+}
+
+// ---- Experiment 5 recorder ----
+let rows = [];
+try { rows = JSON.parse(store.get(ROWS_KEY) || '[]'); if (!Array.isArray(rows)) rows = []; } catch { rows = []; }
+const saveRows = () => store.set(ROWS_KEY, JSON.stringify(rows));
+
+for (const mm of TAPE_MARKS) {
+  const b = document.createElement('button');
+  b.textContent = mm;
+  b.onclick = () => { $('tape').value = mm; };
+  $('tapePresets').append(b);
+}
+
+$('record').onclick = () => {
+  const tapeMm = Number($('tape').value);
+  if (!(tapeMm >= 100 && tapeMm <= 2000)) { msg('Enter the tape distance in mm first.', false); return; }
+  const d = getSensorDistance();
+  if (!d.ok) { msg(`Not recorded: ${d.reason}. Fix it and press Record again.`, false); return; }
+  const participant = $('participant').value;
+  const a = getAmbient();
+  rows.push({
+    participant,
+    glasses: $('glasses').value,
+    tapeMm,
+    sensorRawMm: Math.round(d.rawMm * 10) / 10,
+    sensorMm: Math.round(d.mm * 10) / 10,
+    cameraMm: cameraMm(participant),
+    lux: a.ok ? a.lux : '',
+    timestamp: new Date().toISOString(),
+  });
+  saveRows();
+  const same = rows.filter((r) => r.participant === participant && r.glasses === $('glasses').value && r.tapeMm === tapeMm).length;
+  msg(`Recorded ${participant}, ${tapeMm} mm: sensor ${d.mm.toFixed(0)} mm (press ${same} at this distance).`, true);
+  render();
+};
+$('undo').onclick = () => { rows.pop(); saveRows(); render(); msg('Last row deleted.', true); };
+$('clearRows').onclick = () => {
+  if (!rows.length || !confirm(`Delete all ${rows.length} rows? Export first if you need them.`)) return;
+  rows = []; saveRows(); render(); msg('All rows deleted.', true);
+};
+$('export').onclick = () => {
+  const blob = new Blob([sensorCheckCsv(rows)], { type: 'text/csv' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'sensor_check.csv';
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+};
+
+function msg(text, ok) { $('recMsg').textContent = text; $('recMsg').className = ok ? 'ok' : 'bad'; }
+
+function render() {
+  $('nRows').textContent = rows.length;
+  const esc = (v) => String(v ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+  $('rows').innerHTML = `<tr>${SENSOR_CHECK_COLUMNS.map((c) => `<th>${c}</th>`).join('')}</tr>` +
+    rows.map((r) => `<tr>${SENSOR_CHECK_COLUMNS.map((c) => `<td>${esc(r[c])}</td>`).join('')}</tr>`).reverse().join('');
+  const s = summarizeSensorCheck(rows);
+  $('summary').innerHTML = '<tr><th>tape mm</th><th>glasses</th><th>N</th><th>mean error %</th><th>mean |error| %</th><th>max |error| %</th><th>≤ 10 %</th></tr>' +
+    s.map((g) => `<tr><td>${g.tapeMm}</td><td>${esc(g.glasses)}</td><td>${g.n}</td><td>${g.meanErrPct.toFixed(1)}</td><td>${g.meanAbsErrPct.toFixed(1)}</td><td>${g.maxAbsErrPct.toFixed(1)}</td>` +
+      `<td class="${g.meanAbsErrPct <= 10 ? 'ok' : 'bad'}">${g.meanAbsErrPct <= 10 ? 'yes' : 'no'}</td></tr>`).join('');
+}
+render();
+if (!canUseSensor()) showConn();
+</script>
+</body>
+</html>

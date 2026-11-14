@@ -1,0 +1,24 @@
+# AI-assisted (Claude Code), reviewed by a team member.
+# systemd unit: starts pi/sensor_server.py at boot and restarts it if it stops.
+# Assumes the repository is cloned to /home/user/Vision and the Pi user is "user"; edit both lines if not.
+# Install (see pi/README.md):
+#   sudo cp pi/sensor-server.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now sensor-server
+# Without Camera Module 2 add --no-camera to ExecStart.
+
+[Unit]
+Description=Vision optional sensor module (HC-SR04 over WebSocket)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=user
+SupplementaryGroups=gpio video
+WorkingDirectory=/home/user/Vision
+ExecStart=/usr/bin/python3 -u /home/user/Vision/pi/sensor_server.py
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

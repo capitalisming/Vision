@@ -1,0 +1,123 @@
+<!-- AI-assisted (Claude Code), reviewed by a team member. -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sensor module status</title>
+<style>
+  :root { --bg: #0d1117; --fg: #e6edf3; --muted: #8b949e; --ok: #3fb950; --bad: #f85149; --line: #58a6ff; --grid: #30363d; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 18px/1.4 system-ui, sans-serif;
+         min-height: 100vh; display: grid; grid-template-rows: auto 1fr auto; padding: 24px 32px; gap: 16px; }
+  header { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; flex-wrap: wrap; }
+  h1 { font-size: 22px; font-weight: 600; margin: 0; color: var(--muted); }
+  .pill { padding: 4px 12px; border-radius: 999px; background: #21262d; font-size: 16px; }
+  .pill.ok { color: var(--ok); } .pill.bad { color: var(--bad); }
+  main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); gap: 32px; align-items: center; }
+  .big { font-size: clamp(64px, 14vw, 200px); font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .unit { font-size: 0.3em; color: var(--muted); font-weight: 400; }
+  .label { color: var(--muted); }
+  canvas { width: 100%; height: 100%; min-height: 240px; display: block; }
+  footer { display: flex; gap: 32px; flex-wrap: wrap; font-size: 22px; }
+  footer b { font-variant-numeric: tabular-nums; }
+  @media (max-width: 800px) { main { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>Optional sensor module · HC-SR04 on Raspberry Pi</h1>
+  <span id="conn" class="pill bad">connecting…</span>
+</header>
+<main>
+  <div>
+    <div class="label">Raw sensor distance (no calibration offset)</div>
+    <div class="big"><span id="mm">—</span> <span class="unit">mm</span></div>
+    <div id="sensor" class="label">waiting for data</div>
+  </div>
+  <canvas id="chart" aria-label="Distance over the last 10 seconds"></canvas>
+</main>
+<footer>
+  <span><span class="label">Light (camera estimate):</span> <b id="lux">—</b></span>
+  <span><span class="label">Other clients connected:</span> <b id="clients">—</b></span>
+  <span id="laptop" class="label">laptop not connected</span>
+</footer>
+<script>
+'use strict';
+// Data comes from pi/sensor_server.py over WebSocket on port 8765 of the same host.
+// ?ws=ws://host:port overrides the address (e.g. to open this page from another computer's file system).
+const WS_URL = new URLSearchParams(location.search).get('ws') || `ws://${location.hostname || 'localhost'}:8765`;
+const HISTORY_MS = 10000;
+const points = []; // { t, mm } with mm = null for ok = 0
+let lastReadingAt = 0;
+const $ = (id) => document.getElementById(id);
+
+function setConn(text, ok) { const el = $('conn'); el.textContent = text; el.className = 'pill ' + (ok ? 'ok' : 'bad'); }
+
+function onMessage(msg) {
+  if (!msg || msg.v !== 1) return;
+  if ('clients' in msg && Number.isInteger(msg.clients)) {
+    const others = Math.max(0, msg.clients - 1); // this page is one of the clients
+    $('clients').textContent = String(others);
+    $('laptop').textContent = others > 0 ? 'laptop connected' : 'laptop not connected';
+    $('laptop').style.color = others > 0 ? 'var(--ok)' : '';
+    return;
+  }
+  if ('hello' in msg) { $('lux').textContent = msg.camera ? '…' : 'no camera'; return; }
+  if (!('mm' in msg)) return;
+  const t = performance.now();
+  lastReadingAt = t;
+  const ok = msg.ok === 1 && Number.isFinite(msg.mm);
+  points.push({ t, mm: ok ? msg.mm : null });
+  while (points.length && t - points[0].t > HISTORY_MS) points.shift();
+  $('mm').textContent = ok ? String(msg.mm) : '—';
+  $('sensor').textContent = ok ? 'sensor OK' : 'no reading (nothing in 100–2000 mm, or read failed)';
+  $('sensor').style.color = ok ? 'var(--ok)' : 'var(--bad)';
+  if (Number.isFinite(msg.lux)) $('lux').textContent = msg.lux.toFixed(1) + ' lux';
+}
+
+function connect() {
+  setConn('connecting…', false);
+  let ws;
+  try { ws = new WebSocket(WS_URL); } catch { setTimeout(connect, 2000); return; }
+  ws.onopen = () => setConn('connected to ' + WS_URL, true);
+  ws.onmessage = (e) => { try { onMessage(JSON.parse(e.data)); } catch { /* broken message: skip */ } };
+  ws.onclose = () => { setConn('not connected — retrying', false); setTimeout(connect, 2000); };
+}
+
+function draw() {
+  const c = $('chart');
+  const dpr = window.devicePixelRatio || 1;
+  const w = c.clientWidth, h = c.clientHeight;
+  if (c.width !== Math.round(w * dpr) || c.height !== Math.round(h * dpr)) { c.width = Math.round(w * dpr); c.height = Math.round(h * dpr); }
+  const g = c.getContext('2d');
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.clearRect(0, 0, w, h);
+  const now = performance.now();
+  const css = getComputedStyle(document.documentElement);
+  const pad = 48, maxMm = 2000;
+  const x = (t) => pad + (w - pad - 8) * (1 - (now - t) / HISTORY_MS);
+  const y = (mm) => 8 + (h - 40) * (1 - mm / maxMm);
+  g.font = '14px system-ui'; g.fillStyle = css.getPropertyValue('--muted'); g.strokeStyle = css.getPropertyValue('--grid'); g.lineWidth = 1;
+  for (let mm = 0; mm <= maxMm; mm += 500) {
+    g.beginPath(); g.moveTo(pad, y(mm)); g.lineTo(w - 8, y(mm)); g.stroke();
+    g.fillText(String(mm), 4, y(mm) + 5);
+  }
+  g.fillText('−10 s', pad, h - 8); g.fillText('now', w - 36, h - 8);
+  g.strokeStyle = css.getPropertyValue('--line'); g.lineWidth = 3; g.beginPath();
+  let pen = false;
+  for (const p of points) {
+    if (p.mm === null) { pen = false; continue; }
+    if (pen) g.lineTo(x(p.t), y(p.mm)); else g.moveTo(x(p.t), y(p.mm));
+    pen = true;
+  }
+  g.stroke();
+  if (lastReadingAt && now - lastReadingAt > 1000) { $('sensor').textContent = 'no data from the server'; $('sensor').style.color = 'var(--bad)'; }
+  requestAnimationFrame(draw);
+}
+
+connect();
+requestAnimationFrame(draw);
+</script>
+</body>
+</html>
