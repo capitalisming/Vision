@@ -8,6 +8,7 @@ import { paintIris } from './iris.js';
 import { initHomeScroll } from './home-scroll.js';
 import { connectPiCamera, normalizePiUrl } from './pi-camera.js';
 import { loadCameraSettings, saveCameraSettings, cameraId, describeCamera } from './camera-source.js';
+import { STEPS, stepStatus, firstOpenStep, nextStep, stepSummary, loadSetup, saveSetup } from './setup-flow.js';
 import { renderTrend } from './ui-trend.js';
 import { renderAction } from './ui-action.js';
 import { toBaselineSessions, latestAction } from './trend-data.js';
@@ -20,6 +21,9 @@ const state = {
   distance: null, // participant 2's src/distance.js module, loaded on first camera-mode session
   camera: loadCameraSettings(), // which camera measures the distance: this computer or a Raspberry Pi
   piCamera: null, // the running Raspberry Pi feed, if any
+  cameraUi: null, // src/camera-screen.js, loaded when the camera step is first shown
+  pendingStep: null, // step of the Test flow that a link asked for
+  setupPrefilled: false,
 };
 
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -44,10 +48,7 @@ window.addEventListener('unhandledrejection', (e) => showError(`Error: ${e.reaso
 const enterHandlers = {
   'screen-home': renderHome,
   'screen-log': renderLog,
-  'screen-calib': () => mountScreenCalibration($('#screen-calib'), { onSaved: renderHome }),
-  'screen-camera': enterCamera,
-  'screen-trend': enterTrend,
-  'screen-action': enterAction,
+  'screen-progress': enterProgress,
   'screen-setup': enterSetup,
   'screen-result': renderResult,
 };
@@ -61,19 +62,22 @@ function show(id) {
     b.classList.toggle('active', Boolean(b.closest('nav')) && b.dataset.nav === id);
   });
   document.title = `${target.dataset.title} · Vision self-check`;
-  if (id !== 'screen-camera' && id !== 'screen-test') stopPiCamera(); // no polling in the background
+  if (id !== 'screen-setup' && id !== 'screen-test') leaveDistanceStep(); // no camera running in the background
   state.screen = id;
   window.scrollTo(0, 0); // every screen starts at its top
   clearError();
   enterHandlers[id]?.();
   if (id === 'screen-home') syncHomeScroll();
-  // Integration point for participant 2's screens (screen-camera, screen-trend, screen-action).
   document.dispatchEvent(new CustomEvent('app:screen-enter', { detail: { id } }));
 }
 
 document.addEventListener('click', (e) => {
   const nav = e.target.closest('[data-nav]');
-  if (nav) { e.preventDefault(); show(nav.dataset.nav); }
+  if (nav) {
+    e.preventDefault();
+    state.pendingStep = nav.dataset.step ?? null; // e.g. "Recalibrate" opens the screen step
+    show(nav.dataset.nav);
+  }
 });
 
 // ---------- home ----------
@@ -116,8 +120,7 @@ function renderHome() {
     : zoomChanged ? 'Browser zoom changed. Calibrate the screen again.'
       : 'Screen calibrated. Ready when you are.';
   const primary = $('[data-role=primary]');
-  primary.textContent = ready ? 'Start test' : 'Calibrate screen';
-  primary.dataset.nav = ready ? 'screen-setup' : 'screen-calib';
+  primary.textContent = ready ? 'Start test' : 'Set up';
   setFact($('[data-stat=pxmm]'), p ? p.toFixed(2) : '—', p ? 'px/mm' : '');
   $('[data-stat=calib-link]').textContent = p ? 'Recalibrate' : 'Calibrate';
 
@@ -150,21 +153,23 @@ function renderLog() {
   }
   if (!sessions.length) {
     const td = tbody.insertRow().insertCell();
-    td.colSpan = 9;
+    td.colSpan = 7;
     td.className = 'empty';
-    td.textContent = 'No tests yet. Calibrate the screen, then start a test.';
+    td.textContent = 'No tests yet. Start your first test and it will appear here.';
     return;
   }
   const columns = [
-    ['started', (s) => new Date(s.started_at).toLocaleString()],
-    ['participant', (s) => s.participant], ['eye', (s) => s.eye],
-    ['glasses', (s) => s.glasses], ['condition', (s) => s.condition],
-    ['mode', (s) => MODE_TEXT[s.distance_mode] ?? s.distance_mode],
-    ['outcome', (s) => OUTCOME_SHORT[s.outcome] ?? s.outcome],
-    ['logmar', fmtLogmar],
+    ['participant', (s) => s.participant], ['eye', (s) => s.eye], ['glasses', (s) => s.glasses],
+    ['outcome', (s) => OUTCOME_SHORT[s.outcome] ?? s.outcome], ['logmar', fmtLogmar],
   ];
   for (const s of [...sessions].reverse()) {
     const tr = tbody.insertRow();
+    const when = new Date(s.started_at).toLocaleString();
+    const started = tr.insertCell();
+    started.className = 'c-started';
+    started.append(when, Object.assign(document.createElement('small'), {
+      textContent: `${s.condition} · ${MODE_TEXT[s.distance_mode] ?? s.distance_mode}`,
+    }));
     for (const [key, value] of columns) {
       const td = tr.insertCell();
       td.className = key === 'outcome' ? `c-outcome ${OUTCOME_TONE[s.outcome] ?? 'is-stop'}` : `c-${key}`;
@@ -174,7 +179,6 @@ function renderLog() {
     del.type = 'button';
     del.className = 'link danger';
     del.textContent = 'Delete';
-    const when = new Date(s.started_at).toLocaleString();
     del.setAttribute('aria-label', `Delete session ${s.participant} ${s.eye}, ${when}`);
     del.addEventListener('click', () => {
       if (confirm(`Delete session ${s.participant} ${s.eye}, ${when}? This cannot be undone.`)) {
@@ -225,9 +229,13 @@ $('[data-action=import-json]').addEventListener('change', async (e) => {
   }
 });
 
-// ---------- setup ----------
+// ---------- the Test flow: three steps ----------
 
-const form = $('#setup-form');
+const CODE_RE = /^[A-Za-z0-9_-]{1,16}$/;
+const form = $('#setup-form'); // empty on purpose: the fields belong to it through their form attribute
+const wizard = $('#wizard');
+let openedStep = null;
+let cameraMountToken = 0; // a newer mount, or leaving the step, cancels one that is still loading
 
 function readForm() {
   const fd = new FormData(form);
@@ -243,52 +251,141 @@ function readForm() {
 
 function validateSetup(v, pxPerMm) {
   const errs = [];
-  if (!pxPerMm) errs.push('The screen is not calibrated. Calibrate it before testing.');
-  if (!/^[A-Za-z0-9_-]{1,16}$/.test(v.participant)) errs.push('Participant code: 1–16 letters, digits, _ or -.');
+  if (!pxPerMm) errs.push('The screen is not calibrated. Do it in step 2.');
+  if (!CODE_RE.test(v.participant)) errs.push('Participant code: 1–16 letters, digits, _ or -.');
   if (!['OD', 'OS', 'OU'].includes(v.eye)) errs.push('Choose the eye.');
-  if (!['yes', 'no'].includes(v.glasses)) errs.push('Choose glasses yes or no.');
+  if (!['yes', 'no'].includes(v.glasses)) errs.push('Choose glasses on or off.');
   if (!v.condition || v.condition.length > 40 || /[\r\n]/.test(v.condition)) errs.push('Condition label is required (max 40 characters).');
-  if (!Number.isInteger(v.targetMm) || v.targetMm < 200 || v.targetMm > 6000) errs.push('Target distance must be a whole number of mm between 200 and 6000.');
-  if (!['manual', 'camera'].includes(v.distanceMode)) errs.push('Choose a distance source.');
+  if (!Number.isInteger(v.targetMm) || v.targetMm < 200 || v.targetMm > 6000) errs.push('Distance must be a whole number of mm between 200 and 6000.');
+  if (!['manual', 'camera'].includes(v.distanceMode)) errs.push('Choose how the distance is measured.');
   return errs;
 }
 
 function updateFloorHint() {
   const p = getPxPerMm();
-  const mm = Number(form.targetMm.value);
+  const mm = Number($('[name=targetMm]').value);
   const hint = $('[data-role=floor-hint]');
-  if (!p) { hint.textContent = 'Calibrate the screen first.'; return; }
+  if (!p) { hint.textContent = 'Calibrate the screen first (step 2).'; return; }
   if (!(mm > 0)) { hint.textContent = ''; return; }
   const floor = screenFloorLogmar(mm, p);
   hint.textContent = floor == null
     ? 'At this distance even logMAR 1.3 cannot be drawn on this screen.'
     : `This screen can show signs down to logMAR ${floor.toFixed(1)} at ${mm} mm. Finer than that is logged as "Beyond screen".`;
 }
-form.targetMm.addEventListener('input', updateFloorHint);
-// Old errors describe the previous submit; drop them once the user edits the form.
-form.addEventListener('input', () => { $('.form-errors').textContent = ''; });
+
+/** Everything the three steps know, in the shape src/setup-flow.js expects. */
+function setupData() {
+  const v = readForm();
+  const p = getPxPerMm();
+  let cameraLabel;
+  try {
+    cameraLabel = describeCamera(state.camera, location.origin);
+  } catch {
+    cameraLabel = 'Raspberry Pi (address needed)';
+  }
+  return {
+    ...v,
+    hasScreen: Boolean(p),
+    zoomChanged: Boolean(p) && calibrationDprChanged(),
+    pxPerMm: p ?? 0,
+    cameraLabel,
+    cameraCalibrated: Boolean(state.distance && CODE_RE.test(v.participant) && state.distance.getK(v.participant)),
+  };
+}
+
+/** Bring headers, summaries and buttons in line with what the fields say now. */
+function refreshWizard() {
+  const d = setupData();
+  const status = stepStatus(d);
+  for (const step of STEPS) {
+    const li = wizard.querySelector(`[data-step=${step}]`);
+    li.classList.toggle('is-done', status[step]);
+    li.classList.toggle('is-open', step === openedStep);
+    li.querySelector('.wz-head').setAttribute('aria-expanded', String(step === openedStep));
+    li.querySelector('.wz-sum').textContent = stepSummary(step, d, status);
+    const next = li.querySelector('[data-act=continue]');
+    if (next) next.disabled = !status[step];
+  }
+  $('[data-role=distance-label]').textContent = d.distanceMode === 'camera'
+    ? 'Distance to sit at, mm' : 'Distance to the screen, mm (measure it with a tape)';
+}
+
+function openStep(step, { scroll = false } = {}) {
+  if (step === openedStep) return;
+  if (openedStep === 'distance') leaveDistanceStep();
+  openedStep = step;
+  refreshWizard();
+  if (step === 'screen') {
+    mountScreenCalibration($('[data-body=screen]'), { onSaved: () => { renderHome(); refreshWizard(); } });
+  } else if (step === 'distance') {
+    updateFloorHint();
+    mountDistanceStep();
+  }
+  if (scroll) wizard.querySelector(`[data-step=${step}]`).scrollIntoView({ block: 'start' });
+}
+
+function prefillSetup() {
+  const saved = loadSetup();
+  if (!saved) return;
+  for (const name of ['participant', 'condition', 'targetMm']) {
+    if (saved[name] !== '') wizard.querySelector(`[name=${name}]`).value = saved[name];
+  }
+  for (const name of ['eye', 'glasses', 'distanceMode']) {
+    const radio = saved[name] && wizard.querySelector(`[name=${name}][value=${saved[name]}]`);
+    if (radio) radio.checked = true;
+  }
+}
 
 function enterSetup() {
-  $('.form-errors').textContent = '';
-  updateFloorHint();
-  let camera;
-  try {
-    camera = describeCamera(state.camera, location.origin);
-  } catch {
-    camera = 'a Raspberry Pi with an invalid address';
+  if (!state.setupPrefilled) {
+    prefillSetup();
+    state.setupPrefilled = true;
   }
-  $('[data-role=camera-summary]').textContent = `Camera: ${camera}.`;
+  $('.form-errors').textContent = '';
+  openedStep = null;
+  const requested = state.pendingStep;
+  state.pendingStep = null;
+  const open = () => {
+    if (state.screen === 'screen-setup') openStep(firstOpenStep(stepStatus(setupData()), requested));
+  };
+  // Whether the camera is calibrated is known only to src/distance.js; load it before choosing the step.
+  if (wizard.querySelector('[name=distanceMode]:checked').value === 'camera') prepareCamera().then(open, open);
+  else open();
 }
+
+wizard.addEventListener('click', (e) => {
+  const head = e.target.closest('.wz-head');
+  if (head) openStep(head.parentElement.dataset.step, { scroll: true });
+  const next = e.target.closest('[data-act=continue]');
+  if (next) openStep(nextStep(next.closest('[data-step]').dataset.step), { scroll: true });
+});
+
+wizard.addEventListener('input', (e) => {
+  $('.form-errors').textContent = ''; // old errors describe the previous submit
+  if (e.target.name === 'targetMm') updateFloorHint();
+  refreshWizard();
+});
+
+wizard.addEventListener('change', (e) => {
+  if (e.target.name === 'distanceMode' && openedStep === 'distance') mountDistanceStep();
+});
 
 form.addEventListener('submit', async (e) => {
   e.preventDefault();
   const v = readForm();
   const pxPerMm = getPxPerMm();
   const errs = validateSetup(v, pxPerMm);
+  if (v.distanceMode === 'camera' && !setupData().cameraCalibrated) errs.push('The camera is not calibrated yet. Do it in step 3.');
   const list = $('.form-errors');
   list.textContent = '';
   for (const m of errs) list.append(Object.assign(document.createElement('li'), { textContent: m }));
-  if (errs.length) { list.scrollIntoView({ block: 'nearest' }); return; }
+  if (errs.length) {
+    openStep(firstOpenStep(stepStatus(setupData())));
+    list.scrollIntoView({ block: 'nearest' });
+    return;
+  }
+  saveSetup(v);
+  leaveDistanceStep();
   await startTest({ ...v, pxPerMm });
 });
 
@@ -383,59 +480,68 @@ async function prepareCamera() {
   return mod;
 }
 
-async function enterCamera() {
-  const container = $('#screen-camera');
-  stopPiCamera();
-  container.textContent = '';
-  try {
-    await prepareCamera();
-    (await import('./camera-calib.js')).mountCameraCalib(container);
-  } catch (err) {
-    container.textContent = '';
-    container.append(Object.assign(document.createElement('h1'), { textContent: 'Camera' }));
-    showError(err.message);
+/** Show the camera in step 3 when the distance is measured by the camera. */
+async function mountDistanceStep() {
+  leaveDistanceStep();
+  const token = cameraMountToken;
+  const embed = $('[data-role=camera-embed]');
+  if (wizard.querySelector('[name=distanceMode]:checked').value !== 'camera') {
+    refreshWizard();
+    return;
   }
-  mountCameraPicker(container);
-}
-
-// Choice of camera, shown at the top of the Camera screen: calibration and tests then use the same camera.
-function mountCameraPicker(container) {
-  const wrap = document.createElement('div');
-  wrap.className = 'camera-pick';
-  wrap.innerHTML = `
-    <div class="seg">
-      <label><input type="radio" name="cameraSource" value="local"><span>This computer</span></label>
-      <label><input type="radio" name="cameraSource" value="pi"><span>Raspberry Pi</span></label>
-    </div>
-    <label class="field pi-address">
-      <span class="label">Raspberry Pi address</span>
-      <input name="piUrl" autocomplete="off" inputmode="url" placeholder="raspberrypi.local:8000">
-      <small>Leave empty when this page is opened from the Pi.</small>
-    </label>
-    <p class="hint">Each camera has its own distance calibration.</p>`;
-  wrap.querySelector(`[name=cameraSource][value=${state.camera.source}]`).checked = true;
-  wrap.querySelector('[name=piUrl]').value = state.camera.piUrl;
-  wrap.addEventListener('change', () => {
-    const next = {
-      source: wrap.querySelector('[name=cameraSource]:checked').value,
-      piUrl: wrap.querySelector('[name=piUrl]').value.trim(),
-    };
-    try {
-      if (next.source === 'pi') normalizePiUrl(next.piUrl, location.origin);
-    } catch (err) {
-      showError(err.message);
-      return;
-    }
-    clearError();
-    saveCameraSettings(next);
-    state.camera = next;
-    enterCamera();
+  const participant = readForm().participant;
+  if (!CODE_RE.test(participant)) {
+    embed.append(Object.assign(document.createElement('p'), {
+      className: 'hint', textContent: 'Fill in step 1 first: the camera calibration belongs to the participant code.',
+    }));
+    return;
+  }
+  let distance = null;
+  let error = '';
+  try {
+    distance = await prepareCamera();
+  } catch (err) {
+    error = err.message;
+  }
+  const ui = await import('./camera-screen.js');
+  if (token !== cameraMountToken) return; // the user moved on while the camera module was loading
+  state.cameraUi = ui;
+  let label;
+  try {
+    label = describeCamera(state.camera, location.origin);
+  } catch {
+    label = 'Raspberry Pi (address needed)';
+  }
+  ui.mountCameraStep(embed, {
+    distance, error, participant,
+    source: { settings: state.camera, label },
+    onSourceChange: applyCameraSettings,
+    onCalibrated: refreshWizard,
   });
-  const title = container.querySelector('h1, h2');
-  if (title) title.after(wrap); else container.prepend(wrap);
+  refreshWizard();
 }
 
-// ---------- trend and action ----------
+/** Stop showing the camera in step 3 and let go of it. */
+function leaveDistanceStep() {
+  cameraMountToken += 1;
+  state.cameraUi?.unmountCameraStep($('[data-role=camera-embed]'));
+  stopPiCamera();
+}
+
+/** The user picked another camera. Returns '' or a message to show next to the choice. */
+function applyCameraSettings(next) {
+  try {
+    if (next.source === 'pi') normalizePiUrl(next.piUrl, location.origin);
+  } catch (err) {
+    return err.message;
+  }
+  saveCameraSettings(next);
+  state.camera = next;
+  mountDistanceStep();
+  return '';
+}
+
+// ---------- progress ----------
 
 function readSessions() {
   try {
@@ -446,35 +552,34 @@ function readSessions() {
   }
 }
 
-function emptyScreen(container, title, text) {
-  container.textContent = '';
-  container.append(
-    Object.assign(document.createElement('h1'), { textContent: title }),
-    Object.assign(document.createElement('p'), { className: 'hint', textContent: text }),
-  );
-}
+const h = (tag, className = '', text = '') => Object.assign(document.createElement(tag), { className, textContent: text });
 
-function enterTrend() {
-  const container = $('#screen-trend');
-  const sessions = toBaselineSessions(readSessions());
-  if (!sessions.length) {
-    emptyScreen(container, 'Trend', 'No tests to show yet. Practice tests are left out of the trend.');
-    return;
-  }
-  renderTrend(container, sessions);
-}
-
-function enterAction() {
-  const container = $('#screen-action');
-  const info = latestAction(readSessions());
+function enterProgress() {
+  const root = $('#screen-progress .progress-body');
+  root.textContent = '';
+  const sessions = readSessions();
+  const info = latestAction(sessions);
   if (!info) {
-    emptyScreen(container, 'Action', 'Take a test first. Advice compares your newest test with your own baseline.');
+    const start = h('button', 'primary', 'Take a test');
+    start.type = 'button';
+    start.dataset.nav = 'screen-setup';
+    const row = h('div', 'row');
+    row.append(start);
+    root.append(h('p', 'hint', 'Nothing to show yet. Your progress appears here after your first test. Practice tests are not counted.'), row);
     return;
   }
-  container.innerHTML = '<h2>Action</h2><div class="action-body"></div>';
-  renderAction(container.querySelector('.action-body'), { state: info.state, needed: info.needed });
+  const { latest } = info;
+  const action = h('div', 'action-body');
+  const trend = h('div', 'trend-body');
+  root.append(h('p', 'hint', `Latest test · ${latest.participant} · ${latest.eye} · ${new Date(latest.timestamp).toLocaleDateString()}`),
+    action, trend);
+  renderAction(action, { state: info.state, needed: info.needed });
   // The "Why this test" text is still a placeholder from src/ui-action.js; do not show it to users yet.
-  container.querySelector('.action-why')?.remove();
+  action.querySelector('.action-why')?.remove();
+  renderTrend(trend, toBaselineSessions(sessions));
+  trend.querySelector(':scope > h2')?.remove();
+  const legend = trend.querySelector('.trend-legend');
+  if (legend) legend.textContent = 'The shaded band is your usual range. Red dots are outside it. A triangle is a test without a result.';
 }
 
 // ---------- result ----------

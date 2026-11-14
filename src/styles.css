@@ -178,6 +178,7 @@ table.sessions { width: 100%; margin-top: 8px; border-collapse: collapse; font-s
 table.sessions th { color: var(--faint); font-weight: 400; text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
 table.sessions td { padding: 14px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; color: var(--muted); }
 table.sessions td.c-participant, table.sessions td.c-eye { color: var(--ink); }
+table.sessions td.c-started small { display: block; color: var(--faint); font-size: 0.75rem; margin-top: 2px; }
 table.sessions td.c-logmar, table.sessions .num { text-align: right; }
 table.sessions td.c-logmar { color: var(--ink); font-size: 1rem; }
 table.sessions td.c-outcome.is-warn { color: var(--warn); }
@@ -186,10 +187,9 @@ table.sessions td.c-actions { text-align: right; }
 table.sessions td.empty { text-align: center; color: var(--muted); padding: 56px 16px; white-space: normal; }
 
 /* ---------- new test form ---------- */
-.setup { display: grid; gap: 28px; margin-top: 36px; }
 .field { display: grid; gap: 8px; margin: 0; padding: 0; border: 0; min-width: 0; }
 .label { color: var(--muted); font-size: 0.875rem; padding: 0; }
-input:not([type=radio]):not([type=range]):not([type=file]) {
+input:not([type=radio]):not([type=range]):not([type=file]):not([type=checkbox]) {
   font: inherit; color: var(--ink); width: 100%; max-width: 360px; min-height: 50px; padding: 10px 16px;
   border: 0; border-radius: 14px; background: var(--field); box-shadow: inset 0 0 0 1px var(--line-2);
   transition: box-shadow 160ms var(--ease);
@@ -213,19 +213,40 @@ details.more[open] > summary { margin-bottom: -8px; }
 .form-errors { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
 .form-errors:empty { display: none; }
 .form-errors li { color: var(--danger); font-size: 0.875rem; }
-.setup .row { margin-top: 0; }
-/* The camera line only matters when the distance is measured by the camera. */
-#setup-form:not(:has([name=distanceMode][value=camera]:checked)) .camera-only { display: none; }
-/* Camera screen: choice of camera above the calibration view. */
-.camera-pick { display: grid; gap: 16px; margin: 20px 0 28px; }
-.camera-pick:not(:has([name=cameraSource][value=pi]:checked)) .pi-address { display: none; }
+
+/* ---------- Test flow: three steps, one open at a time ---------- */
+.wz { list-style: none; margin: 32px 0 0; padding: 0; display: grid; gap: 12px; }
+.wz-step { border-radius: 20px; box-shadow: inset 0 0 0 1px var(--line); transition: box-shadow 160ms var(--ease); }
+.wz-step.is-open { box-shadow: inset 0 0 0 1px var(--line-2); background: rgb(255 255 255 / 0.02); }
+.wz-head {
+  width: 100%; display: grid; grid-template-columns: 34px 1fr auto; align-items: center; gap: 14px; text-align: left;
+  min-height: 68px; padding: 14px 20px; border-radius: 20px; background: none; box-shadow: none;
+}
+.wz-head:hover { background: rgb(255 255 255 / 0.03); box-shadow: none; }
+.wz-n { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; font-size: 0.875rem; color: var(--muted); box-shadow: inset 0 0 0 1px var(--line-2); }
+.wz-step.is-open .wz-n { color: var(--ink); box-shadow: inset 0 0 0 2px var(--ink); }
+.wz-step.is-done .wz-n { background: var(--ink); color: #050607; box-shadow: none; font-weight: 600; }
+.wz-title { font-size: 1.125rem; }
+.wz-sum { color: var(--muted); font-size: 0.875rem; text-align: right; }
+.wz-step.is-open .wz-sum { display: none; }
+.wz-body { display: none; padding: 4px 20px 24px; gap: 24px; }
+.wz-step.is-open .wz-body { display: grid; }
+.wz-body .hint { margin: 0; }
+.wz-body .seg { justify-self: start; }
+.wz-actions { display: flex; }
+.wz-footer { display: grid; gap: 12px; margin-top: 28px; justify-items: start; }
+.wz-footer .hint { margin: 0; }
+.wz-footer .form-errors { margin: 0; }
+[data-body=screen]:focus { outline: none; } /* focused only so its arrow-key handler receives keys */
+[data-role=camera-embed]:empty { display: none; }
 
 /* ---------- screen calibration ---------- */
-.calib { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; margin-top: 28px; }
+.calib { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
 .calib-stage { overflow-x: auto; padding: 32px 24px; border-radius: 20px; box-shadow: inset 0 0 0 1px var(--line); }
 /* The outer edge is what the card is aligned to: a crisp 2px line, nothing outside it. */
 .card-rect { border: 2px solid var(--ink); border-radius: 3.18mm; background: rgb(255 255 255 / 0.03); }
 .panel { padding: 24px; border-radius: 20px; box-shadow: inset 0 0 0 1px var(--line); }
+.wz-body .panel { padding: 0; box-shadow: none; }
 .panel .hint { margin-top: 4px; }
 .calib-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
 .calib-controls button { width: 44px; padding: 0; font-size: 1.25rem; }
@@ -247,7 +268,6 @@ details.more[open] > summary { margin-bottom: -8px; }
   background-origin: border-box;
 }
 .ruler-label { color: var(--muted); font-size: 0.875rem; }
-#screen-calib:focus { outline: none; } /* focused only so its arrow-key handler receives keys */
 
 /* ---------- test: black on white, no motion ---------- */
 body.testing { background: #fff; color: #000; }
@@ -286,26 +306,48 @@ dl.kv dd { text-align: right; font-variant-numeric: tabular-nums; }
 dl.kv dt:last-of-type, dl.kv dd:last-of-type { border-bottom: 0; }
 #screen-result > .row { margin-top: 40px; }
 
-/* ---------- screens owned by participant 2: placeholder until their module renders ---------- */
-.screen-owned:empty { display: grid; place-items: center; min-height: 50vh; margin-top: 24px; border-radius: 20px; box-shadow: inset 0 0 0 1px var(--line); }
-.screen-owned:empty[hidden] { display: none; }
-.screen-owned:empty::before { content: attr(data-title) " is not available in this build"; color: var(--muted); padding: 16px; text-align: center; }
 
-/* ---------- screens written by participant 2 (camera, trend, action): their inline light-theme colours ---------- */
-.screen-owned > h2, #screen-action > h2 { font-size: clamp(2.2rem, 1.5rem + 3vw, 3.4rem); font-weight: 300; letter-spacing: -0.03em; margin: 0 0 20px; }
-.screen-owned h3 { font-weight: 400; color: var(--muted); margin: 32px 0 12px; }
-.screen-owned select {
+/* ---------- Progress: trend and action are drawn by participant 2's modules with light-theme inline colours ---------- */
+.progress-body { display: grid; gap: 32px; margin-top: 20px; }
+.progress-body .hint { margin: 0; }
+#screen-progress select {
   font: inherit; color: var(--ink); min-height: 40px; padding: 6px 12px; border: 0; border-radius: 12px;
   background: var(--field); box-shadow: inset 0 0 0 1px var(--line-2);
 }
-.screen-owned label { color: var(--muted); font-size: 0.875rem; }
-#screen-camera input:not([type=radio]):not([type=checkbox]) { width: 9em; min-height: 40px; }
-#screen-camera .camera-pick input:not([type=radio]) { width: 100%; max-width: 360px; min-height: 50px; }
-#screen-camera .calib-instr { font-size: 1rem !important; color: var(--muted); }
-#screen-camera .calib-live { font-weight: 300 !important; }
-#screen-camera .calib-form { margin: 16px 0; }
-.rec-table th, .rec-table td { border: 0 !important; border-bottom: 1px solid var(--line) !important; padding: 8px 10px !important; text-align: left; font-size: 0.875rem; }
-.rec-table td[style*="#c00"] { color: var(--danger) !important; }
+#screen-progress label { color: var(--muted); font-size: 0.875rem; }
+.trend-filters { margin-bottom: 16px !important; }
+/* ---------- camera screen ---------- */
+.cam { display: grid; gap: 28px; }
+.cam .hint { margin: 0; }
+.cam-view { position: relative; aspect-ratio: 4 / 3; border-radius: 28px; overflow: hidden; background: #000; box-shadow: inset 0 0 0 1px var(--line-2); }
+.cam-view video, .cam-view canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
+.cam-view.is-off video, .cam-view.is-off canvas, .cam-view.is-off .cam-chip, .cam-view.is-off .cam-dist { display: none; }
+/* Where to put the face, shown while no face is found. */
+.cam-view.no-face::after { content: ""; position: absolute; left: 30%; top: 12%; width: 40%; height: 68%; border-radius: 50%; border: 2px dashed rgb(255 255 255 / 0.4); pointer-events: none; }
+.cam-chip { position: absolute; left: 16px; bottom: 16px; margin: 0; max-width: calc(100% - 140px); padding: 8px 14px; border-radius: 999px; font-size: 0.9375rem; background: rgb(0 0 0 / 0.55); box-shadow: inset 0 0 0 1px var(--line-2); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); }
+.cam-chip.is-ok { color: var(--ok); }
+.cam-chip.is-warn { color: var(--warn); }
+.cam-dist { position: absolute; right: 20px; bottom: 12px; margin: 0; font-size: clamp(2rem, 7vw, 3.25rem); font-weight: 200; letter-spacing: -0.04em; text-shadow: 0 1px 14px rgb(0 0 0 / 0.8); }
+.cam-alert { margin: 0; padding: 14px 16px; border-radius: 14px; color: var(--danger); background: rgb(255 107 94 / 0.12); }
+.cam-view.is-off { display: none; }
+.cam-calib { display: grid; gap: 16px; }
+.cam-calib h2 { margin: 0; }
+.cam-calib .row { margin-top: 0; }
+.cam-calib-status { color: var(--muted); font-size: 0.875rem; }
+.cam-source-error { color: var(--danger); }
+.cam-source-error:empty { display: none; }
+.cam-source:not(:has([name=cameraSource][value=pi]:checked)) .pi-address { display: none; }
+.cam .more { gap: 16px; }
+.cam-study h2 { font-size: 1.0625rem; font-weight: 400; color: var(--muted); }
+.cam-study input:not([type=checkbox]) { width: 11em; }
+.check { display: inline-flex; align-items: center; gap: 10px; min-height: 44px; color: var(--ink); }
+input[type=checkbox] { width: 20px; height: 20px; accent-color: var(--ink); }
+.rec-table { width: 100%; border-collapse: collapse; font-size: 0.875rem; font-variant-numeric: tabular-nums; }
+.rec-table th { color: var(--faint); font-weight: 400; text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+.rec-table td { padding: 8px 10px; border-bottom: 1px solid var(--line); color: var(--muted); }
+.rec-table td.bad { color: var(--danger); }
+.rec-table tbody:empty { display: none; }
+.trend-filters label:has(select option:only-child) { display: none; }
 .trend-legend, .action-disclaimer { color: var(--muted) !important; }
 .trend-chart svg { overflow: visible; }
 .trend-chart circle[fill="#333"] { fill: var(--ink); }
@@ -337,8 +379,11 @@ dl.kv dt:last-of-type, dl.kv dd:last-of-type { border-bottom: 0; }
   .seg { display: flex; width: 100%; }
   .seg label { flex: 1; }
   .seg span { text-align: center; padding: 9px 8px; }
-  input:not([type=radio]):not([type=range]):not([type=file]) { max-width: none; }
+  input:not([type=radio]):not([type=range]):not([type=file]):not([type=checkbox]) { max-width: none; }
   .calib-stage { padding: 24px 8px; }
+  .wz-head { grid-template-columns: 34px 1fr; row-gap: 2px; }
+  .wz-sum { grid-column: 2; text-align: left; }
+  .wz-body { padding: 4px 16px 20px; }
   .calib-controls input[type=range] { order: -1; flex-basis: 100%; }
   .panel { padding: 20px; }
 

@@ -27,11 +27,12 @@ another USB camera. Defaults: 640x480, port 8000.
 
 1. Open `http://raspberrypi.local:8000/` (or `http://<pi-ip>:8000/`; on the Pi, `hostname -I` shows the IP).
 2. Calibrate the screen on that page. Screen calibration is stored per address, so it has to be done once here too.
-3. Open **Camera** and choose **Raspberry Pi**. Leave the address empty. You should see the live picture, the
-   eye points and `no_face` or a distance.
-4. Calibrate the camera on the same screen (sit at the known distance, press Save). **Each camera has its own
-   calibration**: the app stores it per camera and refuses a camera test for a camera that was not calibrated.
-5. **Test → Study options → Distance measured by → Camera**. The line below it names the camera that will be used.
+3. Open **Test**, fill in step 1 (you) and step 2 (screen), then in step 3 (distance) choose **Camera**. Under
+   *Camera source* choose **Raspberry Pi** and leave the address empty. You should see the live picture, the eye
+   points and a message such as `No face found`, or the distance.
+4. Calibrate the camera there (sit at the known distance, press Calibrate). **Each camera has its own
+   calibration**: the app stores it per camera and does not start a camera test for a camera that was not calibrated.
+5. Press **Start test**.
 
 ### App served by the laptop instead
 
@@ -42,7 +43,7 @@ page's origin:
 python3 pi/camera_server.py --allow-origin http://localhost:5178
 ```
 
-Then enter the Pi address (e.g. `raspberrypi.local:8000`) on the Camera screen. Without `--allow-origin` the
+Then enter the Pi address (e.g. `raspberrypi.local:8000`) under *Camera source* in step 3 of the Test flow. Without `--allow-origin` the
 server refuses cross-origin reads, so other web pages cannot read the camera.
 
 This does **not** work from GitHub Pages: an https page cannot load an http camera.

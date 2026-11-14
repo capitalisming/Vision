@@ -153,6 +153,11 @@ export function setParticipant(participant) {
   state.participant = participant;
 }
 
+// Outer eye corners of every face in the latest processed frame, in video pixels: [{ left, right }].
+export function getEyeCorners() {
+  return state.corners;
+}
+
 // { mm, ageMs, ok, reason, eyeSpanPx }. eyeSpanPx is the 0.5 s median; mm is
 // null unless ok. ageMs is null before the first valid frame.
 export function getDistance(participant = state.participant) {

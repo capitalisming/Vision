@@ -20,12 +20,9 @@
     </a>
     <nav aria-label="Main">
       <button type="button" data-nav="screen-home">Home</button>
-      <button type="button" data-nav="screen-calib">Screen</button>
-      <button type="button" data-nav="screen-camera">Camera</button>
       <button type="button" data-nav="screen-setup">Test</button>
-      <button type="button" data-nav="screen-trend">Trend</button>
-      <button type="button" data-nav="screen-action">Action</button>
-      <button type="button" data-nav="screen-log">Log</button>
+      <button type="button" data-nav="screen-progress">Progress</button>
+      <button type="button" data-nav="screen-log">History</button>
     </nav>
   </header>
 
@@ -59,97 +56,101 @@
         <div>
           <dt>Screen</dt>
           <dd data-stat="pxmm">—</dd>
-          <dd class="sub"><button type="button" class="link" data-nav="screen-calib" data-stat="calib-link">Calibrate</button></dd>
+          <dd class="sub"><button type="button" class="link" data-nav="screen-setup" data-step="screen" data-stat="calib-link">Calibrate</button></dd>
         </div>
         <div>
           <dt>Tests</dt>
           <dd data-stat="count">0</dd>
-          <dd class="sub"><button type="button" class="link" data-nav="screen-log">Open log</button></dd>
+          <dd class="sub"><button type="button" class="link" data-nav="screen-log">Open history</button></dd>
         </div>
       </dl>
       <p class="fine">Pilot prototype that monitors functional vision change.</p>
     </section>
 
-    <section id="screen-log" class="screen" data-title="Log" hidden>
-      <h1>Log</h1>
-      <div class="row tools">
-        <button type="button" class="small" data-action="export-csv">Export CSV</button>
-        <button type="button" class="small" data-action="export-json">Export JSON</button>
-        <label class="file-button small">Import JSON<input type="file" accept="application/json,.json" data-action="import-json" class="sr-only"></label>
-      </div>
-      <p class="io-status" role="status"></p>
-      <table class="sessions">
-        <thead><tr><th>Started</th><th>Participant</th><th>Eye</th><th>Glasses</th><th>Condition</th>
-          <th>Mode</th><th>Outcome</th><th class="num">logMAR</th><th><span class="sr-only">Actions</span></th></tr></thead>
-        <tbody></tbody>
-      </table>
-    </section>
-
-    <section id="screen-calib" class="screen" data-title="Screen calibration" hidden></section>
-
-    <!-- Owned by participant 2 (src/camera-calib.js). Left empty on purpose. -->
-    <section id="screen-camera" class="screen screen-owned" data-title="Camera calibration" hidden></section>
-
-    <section id="screen-setup" class="screen" data-title="New test" hidden>
+    <!-- One flow instead of three screens: who is testing, the screen calibration, the distance. -->
+    <section id="screen-setup" class="screen" data-title="Test" hidden>
       <div class="narrow">
         <h1>New test</h1>
-        <!-- method="dialog": a submit before app.js loads must never navigate or put data in the URL. -->
-        <form id="setup-form" class="setup" method="dialog" novalidate>
-          <label class="field">
-            <span class="label">Participant code</span>
-            <input name="participant" required maxlength="16" pattern="[A-Za-z0-9_-]{1,16}" autocomplete="off" placeholder="e.g. A">
-            <small>Code only, never a name.</small>
-          </label>
-          <fieldset class="field"><legend class="label">Eye</legend>
-            <div class="seg">
-              <label><input type="radio" name="eye" value="OD" required><span>Right · OD</span></label>
-              <label><input type="radio" name="eye" value="OS"><span>Left · OS</span></label>
-              <label><input type="radio" name="eye" value="OU"><span>Both · OU</span></label>
-            </div>
-          </fieldset>
-          <fieldset class="field"><legend class="label">Glasses</legend>
-            <div class="seg">
-              <label><input type="radio" name="glasses" value="yes" required><span>On</span></label>
-              <label><input type="radio" name="glasses" value="no"><span>Off</span></label>
-            </div>
-          </fieldset>
-          <label class="field">
-            <span class="label">Distance to the screen, mm</span>
-            <input name="targetMm" type="number" required min="200" max="6000" step="1" value="1000" inputmode="numeric">
-            <small data-role="floor-hint"></small>
-          </label>
+        <!-- method="dialog": a submit before app.js loads must never navigate or put data in the URL.
+             The form is empty on purpose: every field below belongs to it through its form attribute. -->
+        <form id="setup-form" method="dialog" novalidate></form>
 
-          <details class="more">
-            <summary>Study options</summary>
-            <label class="field">
-              <span class="label">Condition</span>
-              <input name="condition" required maxlength="40" list="condition-list" autocomplete="off" value="self_check">
-              <datalist id="condition-list">
-                <option value="practice"><option value="rep"><option value="dose_noglasses">
-                <option value="dose_glasses"><option value="e2e_glasses"><option value="e2e_noglasses">
-              </datalist>
-              <small>Your own tests count toward your baseline. Tests marked practice stay in the log only. The research analysis reads only the study conditions (rep, dose_*).</small>
-            </label>
-            <fieldset class="field"><legend class="label">Distance measured by</legend>
+        <ol class="wz" id="wizard">
+          <li class="wz-step" data-step="you">
+            <button type="button" class="wz-head" aria-expanded="false">
+              <span class="wz-n">1</span><span class="wz-title">You</span><span class="wz-sum"></span>
+            </button>
+            <div class="wz-body">
+              <label class="field">
+                <span class="label">Participant code</span>
+                <input name="participant" form="setup-form" maxlength="16" pattern="[A-Za-z0-9_-]{1,16}" autocomplete="off" placeholder="e.g. A">
+                <small>Code only, never a name.</small>
+              </label>
+              <fieldset class="field"><legend class="label">Which eye</legend>
+                <div class="seg">
+                  <label><input type="radio" name="eye" form="setup-form" value="OD"><span>Right</span></label>
+                  <label><input type="radio" name="eye" form="setup-form" value="OS"><span>Left</span></label>
+                  <label><input type="radio" name="eye" form="setup-form" value="OU"><span>Both</span></label>
+                </div>
+              </fieldset>
+              <fieldset class="field"><legend class="label">Glasses</legend>
+                <div class="seg">
+                  <label><input type="radio" name="glasses" form="setup-form" value="yes"><span>On</span></label>
+                  <label><input type="radio" name="glasses" form="setup-form" value="no"><span>Off</span></label>
+                </div>
+              </fieldset>
+              <details class="more">
+                <summary>Study options</summary>
+                <label class="field">
+                  <span class="label">Condition</span>
+                  <input name="condition" form="setup-form" maxlength="40" list="condition-list" autocomplete="off" value="self_check">
+                  <datalist id="condition-list">
+                    <option value="practice"><option value="rep"><option value="dose_noglasses">
+                    <option value="dose_glasses"><option value="e2e_glasses"><option value="e2e_noglasses">
+                  </datalist>
+                  <small>Your own tests count toward your baseline. Tests marked practice stay in the history only. The research analysis reads only the study conditions (rep, dose_*).</small>
+                </label>
+              </details>
+              <div class="wz-actions"><button type="button" class="primary" data-act="continue" disabled>Continue</button></div>
+            </div>
+          </li>
+
+          <li class="wz-step" data-step="screen">
+            <button type="button" class="wz-head" aria-expanded="false">
+              <span class="wz-n">2</span><span class="wz-title">Screen</span><span class="wz-sum"></span>
+            </button>
+            <div class="wz-body">
+              <p class="hint">One time only: it tells the app how big a millimetre is on this screen.</p>
+              <div data-body="screen"></div>
+              <div class="wz-actions"><button type="button" class="primary" data-act="continue" disabled>Continue</button></div>
+            </div>
+          </li>
+
+          <li class="wz-step" data-step="distance">
+            <button type="button" class="wz-head" aria-expanded="false">
+              <span class="wz-n">3</span><span class="wz-title">Distance</span><span class="wz-sum"></span>
+            </button>
+            <div class="wz-body">
               <div class="seg">
-                <label><input type="radio" name="distanceMode" value="manual" checked><span>Tape</span></label>
-                <label><input type="radio" name="distanceMode" value="camera"><span>Camera</span></label>
+                <label><input type="radio" name="distanceMode" form="setup-form" value="manual" checked><span>Tape measure</span></label>
+                <label><input type="radio" name="distanceMode" form="setup-form" value="camera"><span>Camera</span></label>
               </div>
-            </fieldset>
-            <div class="field camera-only">
-              <p class="hint" data-role="camera-summary"></p>
-              <button type="button" class="link" data-nav="screen-camera">Choose or calibrate the camera</button>
+              <div data-role="camera-embed"></div>
+              <label class="field">
+                <span class="label" data-role="distance-label">Distance to the screen, mm</span>
+                <input name="targetMm" form="setup-form" type="number" min="200" max="6000" step="1" value="1000" inputmode="numeric">
+                <small data-role="floor-hint"></small>
+              </label>
             </div>
-          </details>
+          </li>
+        </ol>
 
+        <div class="wz-footer">
           <ul class="form-errors" role="alert"></ul>
-          <div class="row">
-            <button type="submit" class="primary large">Start test</button>
-            <button type="button" class="ghost" data-nav="screen-home">Cancel</button>
-          </div>
+          <button type="submit" form="setup-form" class="primary large">Start test</button>
           <p class="hint">The test opens on a white screen. Answer with the arrow keys; Esc stops it.</p>
           <p class="hint touch-only">This test needs a physical keyboard; it cannot be answered by touch.</p>
-        </form>
+        </div>
       </div>
     </section>
 
@@ -162,13 +163,30 @@
       <div id="result-body"></div>
       <div class="row center">
         <button type="button" class="primary" data-nav="screen-setup">New test</button>
-        <button type="button" data-nav="screen-log">Log</button>
+        <button type="button" data-nav="screen-progress">Progress</button>
       </div>
     </section>
 
-    <!-- Owned by participant 2 (src/ui-trend.js, src/ui-action.js). Left empty on purpose. -->
-    <section id="screen-trend" class="screen screen-owned" data-title="Trend" hidden></section>
-    <section id="screen-action" class="screen screen-owned" data-title="Action" hidden></section>
+    <!-- What the tests say about you: the advice for the newest test, and the chart. -->
+    <section id="screen-progress" class="screen" data-title="Progress" hidden>
+      <h1>Progress</h1>
+      <div class="progress-body"></div>
+    </section>
+
+    <section id="screen-log" class="screen" data-title="History" hidden>
+      <h1>History</h1>
+      <div class="row tools">
+        <button type="button" class="small" data-action="export-csv">Export CSV</button>
+        <button type="button" class="small" data-action="export-json">Export JSON</button>
+        <label class="file-button small">Import JSON<input type="file" accept="application/json,.json" data-action="import-json" class="sr-only"></label>
+      </div>
+      <p class="io-status" role="status"></p>
+      <table class="sessions">
+        <thead><tr><th>Started</th><th>Participant</th><th>Eye</th><th>Glasses</th><th>Result</th>
+          <th class="num">logMAR</th><th><span class="sr-only">Actions</span></th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </section>
   </main>
 </body>
 </html>

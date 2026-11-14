@@ -52,9 +52,8 @@ export function mountScreenCalibration(root, opts = {}) {
   let width = saved ? saved * CARD_WIDTH_MM : DEFAULT_WIDTH_PX;
 
   root.innerHTML = `
-    <h1>Screen calibration</h1>
     <div class="calib">
-      <p class="lede">Keep browser zoom at 100%. Hold a bank card flat against the screen and resize the outline
+      <p class="hint">Keep browser zoom at 100%. Hold a bank card flat against the screen and resize the outline
         until it matches the card edges exactly. Then press Save.</p>
       <div class="calib-stage"><div class="card-rect" aria-label="Card outline"></div></div>
       <div class="panel">
