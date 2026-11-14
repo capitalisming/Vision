@@ -1,0 +1,29 @@
+{
+  "page_errors": [],
+  "trials": 48,
+  "stroke_px_range": [
+    1.8346740140346074,
+    6.66129915560837
+  ],
+  "max_rel_stroke_error": 0.015335413967612638,
+  "orientation_decoded_matches_log": "48/48",
+  "estimates": [
+    {
+      "eye": "OD",
+      "true_SIMULATED": 0,
+      "estimate": 0.03201993218347503,
+      "sd": 0.05358438638967782,
+      "valid": true
+    },
+    {
+      "eye": "OS",
+      "true_SIMULATED": 0.3,
+      "estimate": 0.2303641110264056,
+      "sd": 0.05243343305233559,
+      "valid": true
+    }
+  ],
+  "mmPerDevicePx_logged": 0.055236633410079304,
+  "mmPerDevicePx_expected": 0.05521739130434782,
+  "dpr": 3
+}

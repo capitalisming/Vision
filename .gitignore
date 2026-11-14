@@ -1,0 +1,8 @@
+node_modules/
+app/dist/
+app/public/models/
+app/public/wasm/
+__pycache__/
+.pytest_cache/
+*.pyc
+_site/

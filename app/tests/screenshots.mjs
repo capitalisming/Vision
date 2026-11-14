@@ -1,0 +1,23 @@
+// UI screenshots for the project page (manual-distance mode; no face available in CI).
+import { createRequire } from 'node:module';
+const { chromium } = createRequire(import.meta.url)('playwright');
+const URL = process.argv[2] ?? 'http://localhost:4173/';
+const OUT = process.argv[3] ?? '../site/img';
+const b = await chromium.launch();
+const p = await (await b.newContext({ viewport: { width: 390, height: 780 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true })).newPage();
+await p.goto(URL);
+await p.screenshot({ path: `${OUT}/ui-home-empty.png` });
+await p.getByRole('button', { name: 'Начать калибровку' }).click();
+await p.screenshot({ path: `${OUT}/ui-calibration.png` });
+await p.getByRole('button', { name: 'Совпадает — дальше' }).click();
+await p.getByRole('button', { name: 'Без камеры (ручной режим)' }).click();
+await p.getByRole('button', { name: /Пройти тест/ }).click();
+await p.screenshot({ path: `${OUT}/ui-setup.png` });
+await p.getByRole('button', { name: 'Начать', exact: true }).click();
+await p.screenshot({ path: `${OUT}/ui-instruction.png` });
+await p.getByRole('button', { name: /Начать \(/ }).click();
+await p.getByText('OD · 1/24').waitFor();
+await p.waitForTimeout(300);
+await p.screenshot({ path: `${OUT}/ui-trial.png` });
+await b.close();
+console.log('screenshots written');

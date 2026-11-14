@@ -1,0 +1,347 @@
+<title>Монитор зрения вблизи</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="description" content="Самостоятельный тест остроты зрения вблизи для астронавтов: контроль расстояния камерой, личная норма, решение без оператора.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=Space+Grotesk:wght@500;600;700&display=swap">
+<style>
+/* Layout: a single reading column (≈68ch) with full-bleed figure plates; a left rail carries
+   section numbers because the page follows the real order of the research (problem → method → data → results). */
+:root {
+  --paper: #f5f6f8;      /* page ground: cool grey with a slight blue bias, like chart card stock */
+  --plate: #fcfcfb;      /* figure plate = matplotlib surface, so figures sit flush */
+  --ink: #12161d;
+  --ink-2: #4b5260;
+  --rule: #d9dde4;
+  --accent: #2456c9;     /* instrument blue */
+  --measured: #17794a;
+  --calculated: #2456c9;
+  --simulated: #9a5b00;
+  --proposed: #6c4fc4;
+  --warn-bg: #fff5e3;
+  --warn-ink: #6b3f00;
+  --display: "Space Grotesk", "Helvetica Neue", Arial, sans-serif;
+  --body: "IBM Plex Sans", "Segoe UI", Roboto, Arial, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #12151b; --plate: #fcfcfb; --ink: #e9ecf1; --ink-2: #a8b0bd; --rule: #2a303a;
+    --accent: #7ea2ff; --measured: #4fc58b; --calculated: #7ea2ff; --simulated: #f0b04f; --proposed: #b3a2ff;
+    --warn-bg: #2b2210; --warn-ink: #f3d39a; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #12151b; --plate: #fcfcfb; --ink: #e9ecf1; --ink-2: #a8b0bd; --rule: #2a303a;
+  --accent: #7ea2ff; --measured: #4fc58b; --calculated: #7ea2ff; --simulated: #f0b04f; --proposed: #b3a2ff;
+  --warn-bg: #2b2210; --warn-ink: #f3d39a; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--paper); color: var(--ink); font: 400 16px/1.6 var(--body); }
+.wrap { max-width: 1040px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+h1, h2, h3 { font-family: var(--display); line-height: 1.15; text-wrap: balance; margin: 0; letter-spacing: -0.01em; }
+h1 { font-size: clamp(2.2rem, 6vw, 3.6rem); font-weight: 700; }
+h2 { font-size: clamp(1.5rem, 3.4vw, 2rem); font-weight: 600; }
+h3 { font-size: 1.1rem; font-weight: 600; }
+p, li { max-width: 68ch; }
+a { color: var(--accent); }
+a:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+code, .mono { font-family: var(--mono); font-size: 0.92em; }
+.num { font-variant-numeric: tabular-nums; }
+
+/* hero */
+header.hero { padding-block: 40px 28px; border-bottom: 1px solid var(--rule); }
+.hero-grid { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 32px; align-items: center; }
+.eyebrow { margin-bottom: 12px; font: 500 0.78rem/1.2 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-2); }
+.lede { font-size: 1.2rem; color: var(--ink); margin: 16px 0 12px; }
+.chart-card { background: var(--plate); color: #12161d; border: 1px solid var(--rule); border-radius: 4px; padding: 18px 16px 12px; }
+.chart-card svg { width: 100%; height: auto; display: block; }
+.chart-card .cap { font: 400 0.75rem/1.4 var(--mono); color: #4b5260; margin-top: 8px; }
+.status { display: flex; flex-wrap: wrap; gap: 8px 16px; margin-top: 18px; font: 500 0.85rem/1.4 var(--mono); }
+.status span { display: inline-flex; align-items: center; gap: 6px; }
+.dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+
+/* provenance chips */
+.chip { display: inline-block; font: 500 0.7rem/1 var(--mono); letter-spacing: 0.06em; padding: 4px 6px 3px; border-radius: 3px; border: 1px solid currentColor; vertical-align: 0.15em; white-space: nowrap; }
+.chip.m { color: var(--measured); } .chip.c { color: var(--calculated); } .chip.s { color: var(--simulated); } .chip.p { color: var(--proposed); }
+.legend-row { display: flex; flex-wrap: wrap; gap: 10px 18px; font-size: 0.88rem; color: var(--ink-2); margin-top: 14px; }
+
+/* sections */
+section { padding-block: 48px 8px; display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 0 24px; }
+.rail { font: 500 0.85rem/1 var(--mono); color: var(--ink-2); padding-top: 8px; border-top: 2px solid var(--ink); align-self: start; }
+.body > * + * { margin-top: 14px; }
+.body h2 + p { margin-top: 12px; }
+.facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 16px 24px; margin-top: 20px !important; }
+.fact { border-top: 1px solid var(--rule); padding-top: 10px; }
+.fact b { display: block; font: 600 1.9rem/1.1 var(--display); }
+.fact small { color: var(--ink-2); font-size: 0.85rem; display: block; margin-top: 4px; }
+.steps { counter-reset: s; list-style: none; padding: 0; display: grid; gap: 14px; }
+.steps li { counter-increment: s; display: grid; grid-template-columns: 2.2rem minmax(0, 1fr); gap: 4px 10px; }
+.steps li::before { content: counter(s); font: 600 1.1rem/1.4 var(--display); color: var(--accent); }
+.shots { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-top: 20px !important; }
+.shots figure { margin: 0; }
+.shots img { width: 100%; border: 1px solid var(--rule); border-radius: 10px; background: #fff; display: block; }
+.shots figcaption { font-size: 0.8rem; color: var(--ink-2); margin-top: 6px; }
+figure.plate { margin: 22px 0 0; }
+figure.plate.narrow { max-width: 760px; }
+figure.plate img { width: 100%; display: block; background: var(--plate); border: 1px solid var(--rule); border-radius: 4px; }
+figure.plate figcaption { font-size: 0.9rem; color: var(--ink-2); margin-top: 8px; max-width: 80ch; }
+figure.plate figcaption b { color: var(--ink); }
+.table-scroll { overflow-x: auto; margin-top: 16px !important; }
+table { border-collapse: collapse; width: 100%; font-size: 0.9rem; min-width: 560px; }
+th, td { text-align: left; padding: 8px 10px 8px 0; border-bottom: 1px solid var(--rule); vertical-align: top; }
+th { font: 500 0.75rem/1.3 var(--mono); letter-spacing: 0.05em; text-transform: uppercase; color: var(--ink-2); }
+td.n { font-variant-numeric: tabular-nums; font-family: var(--mono); font-size: 0.86rem; white-space: nowrap; }
+.callout { background: var(--warn-bg); color: var(--warn-ink); border-radius: 4px; padding: 14px 16px; }
+.callout b { color: inherit; }
+.formula { font-family: var(--mono); font-size: 0.9rem; background: var(--plate); color: #12161d; border: 1px solid var(--rule); border-radius: 4px; padding: 12px 14px; overflow-x: auto; white-space: pre; }
+.two { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 24px; }
+.refs { font-size: 0.88rem; padding-left: 1.4rem; }
+.refs li { margin-bottom: 6px; max-width: none; }
+footer { margin-top: 56px; padding-block: 24px 40px; border-top: 1px solid var(--rule); color: var(--ink-2); font-size: 0.85rem; }
+@media (max-width: 820px) {
+  .hero-grid, .two { grid-template-columns: minmax(0, 1fr); }
+  section { grid-template-columns: minmax(0, 1fr); }
+  .rail { border-top: 0; padding-top: 0; margin-bottom: 10px; }
+  .shots { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (prefers-reduced-motion: no-preference) { html { scroll-behavior: smooth; } }
+</style>
+
+<div class="wrap">
+<header class="hero">
+  <div class="hero-grid">
+    <div>
+      <div class="eyebrow">Исследовательский прототип · SANS · 2026</div>
+      <h1>Монитор зрения вблизи</h1>
+      <p class="lede">Астронавт сам, за две минуты и без оператора с Земли, проверяет, не ухудшилось ли его зрение вблизи. Сравнение идёт не с «нормой для всех», а с его собственным разбросом.</p>
+      <p>Телефон показывает уменьшающиеся знаки E на расстоянии чтения, каждому глазу отдельно. Фронтальная камера следит, чтобы до глаз оставалось 40&nbsp;см, и пересчитывает размер знака под фактическое расстояние.</p>
+      <div class="status" aria-label="Статус проекта">
+        <span><i class="dot" style="background:var(--measured)"></i>ПО готово и проверено</span>
+        <span><i class="dot" style="background:var(--simulated)"></i>Опыты с людьми: 0 из 4</span>
+        <span><i class="dot" style="background:var(--calculated)"></i>Экспериментальных данных: нет</span>
+      </div>
+    </div>
+    <div class="chart-card" role="img" aria-label="Фрагмент таблицы остроты: знаки E уменьшаются шагами 0,1 logMAR">
+      <svg id="chart" viewBox="0 0 360 220" xmlns="http://www.w3.org/2000/svg"></svg>
+      <div class="cap">Знаки нарисованы в масштабе logMAR: каждый ряд на 0,1 log меньше, то есть в 1,26 раза. На 40&nbsp;см штрих знака 0,0 = 0,116&nbsp;мм = 1 угловая минута.</div>
+    </div>
+  </div>
+  <div class="legend-row" aria-label="Категории данных на странице">
+    <span><span class="chip m">MEASURED</span> измерено</span>
+    <span><span class="chip c">CALCULATED</span> рассчитано по формулам</span>
+    <span><span class="chip s">SIMULATED</span> синтетические данные, только проверка алгоритмов</span>
+    <span><span class="chip p">PROPOSED</span> предложено, не реализовано</span>
+  </div>
+</header>
+
+<section id="problem">
+  <div class="rail">01</div>
+  <div class="body">
+    <h2>Проблема: невесомость меняет форму глаза</h2>
+    <p>В невесомости жидкость смещается к голове. У части экипажа задняя стенка глаза уплощается, диск зрительного нерва отекает, появляются складки сосудистой оболочки. NASA называет этот комплекс SANS, spaceflight-associated neuro-ocular syndrome. Глаз становится «короче», и его оптика сдвигается в сторону дальнозоркости, поэтому первым страдает зрение вблизи.</p>
+    <div class="facts">
+      <div class="fact"><b class="num">≈70&nbsp;%</b><small>экипажей длительных миссий имеют признаки SANS, от лёгких до тяжёлых [3]</small></div>
+      <div class="fact"><b class="num">57&nbsp;%</b><small>сообщают, что хуже видят вблизи (самоотчёт) [3]</small></div>
+      <div class="fact"><b class="num">15&nbsp;%</b><small>имеют объективный сдвиг рефракции ≥ +0,75&nbsp;D [3]</small></div>
+      <div class="fact"><b class="num">+2,00&nbsp;D</b><small>самый большой сдвиг за одну миссию; у части астронавтов изменения сохранялись до 7 лет [1,3,4]</small></div>
+    </div>
+    <p>На МКС остроту зрения проверяют по таблице на бортовом ноутбуке. Ход теста и результаты фиксирует наземный оператор [5,6], а приборов для измерения рефракции на борту нет [4]. При задержке связи с Марсом от 3 до 22 минут в одну сторону такой формат не работает.</p>
+    <p class="callout"><b>Чего проект не делает.</b> Он не обнаруживает SANS: отёк диска и складки находят снимками (ОКТ, МРТ, осмотр глазного дна), и часто они протекают без симптомов. Проект измеряет только одно следствие, функциональное зрение вблизи. Его исправляют очки: NASA уже выдаёт экипажу запасные пары нарастающей силы [3].</p>
+  </div>
+</section>
+
+<section id="approach">
+  <div class="rail">02</div>
+  <div class="body">
+    <h2>Подход: измерить, а не спросить</h2>
+    <p><b>Гипотеза.</b> Короткий самостоятельный тест на телефоне с контролем расстояния и личной нормой обнаруживает ухудшение зрения вблизи, когда оно превышает собственный разброс человека, и сигнал растёт с силой оптической расфокусировки.</p>
+    <ol class="steps">
+      <li><div><b>Калибровка, один раз.</b> Ширину рамки на экране подгоняют под банковскую карту (стандарт ID-1, 53,98&nbsp;мм), и приложение узнаёт физический размер пикселя. Затем с рулеткой на 40&nbsp;см запоминается размер радужек в кадре камеры.</div></li>
+      <li><div><b>Тест, ≈ 2 минуты.</b> 24 знака на глаз; стрелкой указать, куда смотрят «зубцы» E. Следующий размер выбирает байесовская процедура там, где ответ информативнее всего. Если телефон вышел из окна 36–44&nbsp;см, знак исчезает.</div></li>
+      <li><div><b>Личная норма.</b> Первые 3 сессии (до полёта лучше 5, в разные дни) задают среднее и собственный разброс человека.</div></li>
+      <li><div><b>Решение.</b> Изменение меньше разброса: «без изменений». Больше разброса: «повторите завтра». Два раза подряд: «наденьте запасные очки следующей силы и пройдите тест в них; сообщите врачу». Если и в них острота не вернулась или ухудшение ≥ 3 строк: «сообщите врачу при первой возможности».</div></li>
+    </ol>
+    <div class="shots">
+      <figure><img src="img/ui-calibration.png" alt="Экран калибровки: рамка подгоняется под банковскую карту" loading="lazy"><figcaption>Калибровка экрана картой</figcaption></figure>
+      <figure><img src="img/ui-setup.png" alt="Экран подготовки: чек-лист условий, выбор очков и режима" loading="lazy"><figcaption>Условия и режим</figcaption></figure>
+      <figure><img src="img/ui-instruction.png" alt="Инструкция: закройте левый глаз ладонью" loading="lazy"><figcaption>Монокулярно, по очереди</figcaption></figure>
+      <figure><img src="img/ui-trial.png" alt="Экран теста: знак E в центре, индикатор расстояния 40 см, четыре кнопки-стрелки" loading="lazy"><figcaption>Предъявление: расстояние вверху</figcaption></figure>
+    </div>
+    <p>Всё работает на телефоне и без сети: модель распознавания лица (MediaPipe, Apache-2.0) и её среда выполнения входят в приложение. Изображения с камеры никуда не уходят и не сохраняются. В журнал пишутся только числа.</p>
+  </div>
+</section>
+
+<section id="setup">
+  <div class="rail">03</div>
+  <div class="body">
+    <h2>Экспериментальная проверка</h2>
+    <p>В исходной идее проверка «за вечер» звучала так: надеть очки известной силы и убедиться, что программа ловит ухудшение. Оптический расчёт показал, что с <i>любыми</i> очками это не сработает.</p>
+    <figure class="plate">
+      <img src="fig/c2_accommodation_masking.png" alt="Два графика. Слева: плюсовая линза ухудшает остроту на 40 см только после +2,5 D; минусовая у 20-летнего не ухудшает вовсе, у 50-летнего ухудшает после 1 D. Справа: при очках для чтения гиперметропический сдвиг не виден, пока он меньше запаса аккомодации: 4 D в 40 лет, 1,75 D в 50, 1 D в 55." loading="lazy">
+      <figcaption><span class="chip c">CALCULATED</span> <b>Аккомодация маскирует расфокусировку.</b> Знак на 40&nbsp;см требует 2,5&nbsp;D фокусировки. Молодой глаз компенсирует минусовую линзу и спокойно «расслабляется» под плюсовую до +2,5&nbsp;D. Ухудшение гарантированно дают только плюсовые линзы <b>сильнее +2,5&nbsp;D</b>. Справа: тест вблизи не видит гиперметропический сдвиг меньше запаса аккомодации. Допущения указаны на рисунке.</figcaption>
+    </figure>
+    <p>Отсюда исправленный протокол. Его <b>нужно подтвердить</b> до начала опытов, все критерии зафиксированы заранее (<code>docs/02_protocol.md</code>):</p>
+    <div class="table-scroll">
+      <table>
+        <thead><tr><th>Опыт</th><th>Что проверяет</th><th>Как</th><th>Критерий успеха</th><th>Статус</th></tr></thead>
+        <tbody>
+          <tr><td>E0</td><td>Камера держит расстояние</td><td>30–50&nbsp;см по рулетке, глаз открыт / закрыт ладонью, 15 точек на участника</td><td>пределы согласия ±2&nbsp;см (±0,02&nbsp;logMAR)</td><td>не проведён</td></tr>
+          <tr><td>E1</td><td>Тест ловит оптическое ухудшение</td><td>аптечные очки +1,0 … +4,0&nbsp;D в случайном порядке, 3 прогона без линз; ≥ 3 участника</td><td>+1/+2&nbsp;D: нет срабатываний у ≥ 80&nbsp;% глаз; +3,5/+4&nbsp;D: срабатывание у ≥ 80&nbsp;%; рост с силой линзы</td><td>не проведён</td></tr>
+          <tr><td>E2</td><td>Собственный разброс между днями</td><td>1 тест в день, 5–7 дней</td><td>измерить Sw; пересмотреть σ0, если Sw &gt; 0,08</td><td>не проведён</td></tr>
+          <tr><td>E3</td><td>Сценарий SANS</td><td>50+ лет, минусовые линзы −0,5 … −1,5&nbsp;D</td><td>срабатывание после исчерпания запаса аккомодации</td><td>по возможности</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>Оборудование: телефон с плотностью ≥ 400&nbsp;ppi и фронтальной камерой, банковская карта, рулетка, набор очков для чтения. Линзы до +2,5&nbsp;D служат встроенным контролем: если на них программа «срабатывает», она ошибается.</p>
+  </div>
+</section>
+
+<section id="methods">
+  <div class="rail">04</div>
+  <div class="body">
+    <h2>Данные и методы</h2>
+    <div class="two">
+      <div>
+        <h3>Что записывается в каждом предъявлении</h3>
+        <p>Ориентация и ответ; запрошенный и фактический размер (logMAR); толщина штриха в физических пикселях и миллиметрах; расстояние в начале и в момент ответа; три независимые оценки расстояния (две радужки, межзрачковое); время реакции; средняя яркость кадра как показатель освещения. Экспорт в JSON и CSV, у каждой записи метка категории данных.</p>
+      </div>
+      <div>
+        <h3>Как считается порог</h3>
+        <p>Психометрическая функция четырёхальтернативного выбора: угадывание 25&nbsp;%, промахи 2&nbsp;%, наклон 12/logMAR (допущение, проверено в S1). Порог — апостериорное среднее по сетке с равномерным априорным распределением. Оно пересчитывается из сырых попыток: Python совпадает с приложением с точностью до 10⁻¹⁵.</p>
+      </div>
+    </div>
+    <div class="formula">logMAR = log10( 2·atan( s / 2d ) в угл. мин. )        s — штрих знака, d — расстояние глаз–экран
+предел = t₀.₉₅(df) · s_eff · √(1 + 1/n),   s_eff² = (k·σ0² + (n−1)·s²)/(k+n−1),   σ0 = 0,06, k = 3   (PROPOSED)</div>
+    <p>Сжатие разброса к σ0 защищает от случайно «слишком ровной» нормы из трёх сессий: без него норма давала бы ложные тревоги. Порог односторонний, потому что важно только ухудшение.</p>
+    <figure class="plate narrow">
+      <img src="fig/c1_display_limit.png" alt="График: минимальный размер знака в logMAR в зависимости от плотности пикселей. При 110 ppi предел +0,3, при 460 ppi −0,33 на 40 см." loading="lazy">
+      <figcaption><span class="chip c">CALCULATED</span> <b>Почему нужен телефон.</b> Экран не нарисует знак тоньше пикселя. Ноутбук с 110&nbsp;ppi на 40&nbsp;см ограничен остротой +0,30&nbsp;logMAR, хуже нормы. Телефон с 460&nbsp;ppi доходит до −0,33, что покрывает нормальное зрение взрослого. Знаки тоньше нескольких пикселей рисуются со сглаживанием, как во Фрайбургском тесте FrACT [10].</figcaption>
+    </figure>
+  </div>
+</section>
+
+<section id="results">
+  <div class="rail">05</div>
+  <div class="body">
+    <h2>Результаты</h2>
+    <p class="callout"><b>Экспериментальных результатов пока нет.</b> Ни один опыт с людьми не проводился. Ниже проверки программы и алгоритмов. Графики эксперимента построятся тем же кодом из реальных экспортов (<code>python analysis/run_analysis.py</code>).</p>
+    <div class="table-scroll">
+      <table>
+        <thead><tr><th>Проверка</th><th>Категория</th><th>Результат</th></tr></thead>
+        <tbody>
+          <tr><td>Размер нарисованных знаков: 48 знаков в Chromium, эмуляция 460&nbsp;ppi, размер считан из пикселей canvas</td><td><span class="chip m">MEASURED</span><br><small>программная проверка</small></td><td class="n">ошибка ≤ 1,6&nbsp;% (≈ 0,006 logMAR); ориентация 48/48</td></tr>
+          <tr><td>Порог из сырых попыток: Python против приложения</td><td><span class="chip c">CALCULATED</span></td><td class="n">расхождение &lt; 1e-15 logMAR</td></tr>
+          <tr><td>Точность теста, 24 знака/глаз, наклон 12, 300 симуляций</td><td><span class="chip s">SIMULATED</span></td><td class="n">RMSE 0,057; смещение +0,003 logMAR</td></tr>
+          <tr><td>Ложные тревоги правила, 20 000 симуляций на точку</td><td><span class="chip s">SIMULATED</span></td><td class="n">3,6&nbsp;% за сессию; 0,5&nbsp;% при двух подряд</td></tr>
+          <tr><td>80&nbsp;% вероятность обнаружения</td><td><span class="chip s">SIMULATED</span></td><td class="n">при ухудшении 0,21 (одна сессия) / 0,24 logMAR (две)</td></tr>
+          <tr><td>Тесты кода</td><td>—</td><td class="n">TypeScript 9/9, Python 6/6, сквозной тест: пройден</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <figure class="plate narrow">
+      <img src="fig/s2_change_rule.png" alt="Кривые вероятности срабатывания в зависимости от истинного ухудшения: 80 % при 0,21 logMAR для одной сессии и 0,24 для двух подряд; ложная тревога 3,6 % и 0,5 %." loading="lazy">
+      <figcaption><span class="chip s">SIMULATED</span> <b>Насколько чувствительно правило.</b> Ухудшение на одну строку (0,1&nbsp;logMAR) заметно лишь в 30&nbsp;% случаев. Две строки (0,2) обнаруживаются в 77&nbsp;% с одной сессии. Пересчёт в диоптрии на рисунке опирается на <i>допущенную</i> модель размытия, реальную измерит E1.</figcaption>
+    </figure>
+    <figure class="plate">
+      <img src="fig/s3_dose_response.png" alt="Синтетические данные четырёх участников: острота стабильна до +2,5 D и ухудшается с линзами +3,0…+4,0 D." loading="lazy">
+      <figcaption><span class="chip s">SIMULATED</span> <b>Так будет выглядеть результат E1.</b> Синтетический набор в формате приложения прошёл весь пайплайн анализа: срабатываний 0/8 при +1,0 и +2,0&nbsp;D, 7/8 при +3,0, 8/8 при +3,5 и +4,0. Это проверка анализа, а не данные. Положение излома восстанавливается с ошибкой до 0,55&nbsp;D, поэтому он остаётся разведочным показателем.</figcaption>
+    </figure>
+    <figure class="plate">
+      <img src="fig/s1_staircase_accuracy.png" alt="Точность и смещение адаптивного теста в зависимости от числа предъявлений при трёх наклонах психометрической функции." loading="lazy">
+      <figcaption><span class="chip s">SIMULATED</span> <b>Почему 24 знака.</b> Дальше точность растёт медленно: при 48 знаках RMSE падает с 0,057 до 0,037, а время удваивается. Если реальный наклон вдвое пологе принятого, ошибка растёт до 0,11, а собственная оценка неопределённости её занижает. Поэтому норма строится по фактическому разбросу между сессиями.</figcaption>
+    </figure>
+  </div>
+</section>
+
+<section id="discussion">
+  <div class="rail">06</div>
+  <div class="body">
+    <h2>Обсуждение и ограничения</h2>
+    <p>Подтверждено, что программа делает то, что заявлено: рисует знак нужного физического размера, пересчитывает его под фактическое расстояние, воспроизводимо считает порог и применяет правило с известной частотой ложных тревог. Гипотезу о людях это пока не подтверждает: данных о людях нет.</p>
+    <ul>
+      <li><b>Тест видит функцию, а не рефракцию.</b> Пока у глаза есть запас аккомодации, небольшой гиперметропический сдвиг не ухудшает чтение и тестом не обнаруживается. Для задачи «может ли человек читать» это допустимо, для раннего обнаружения сдвига нет.</li>
+      <li><b>Чувствительность около двух строк.</b> Ухудшение на одну строку правило ловит редко. Причины: погрешность одного теста (~0,06) и дневные колебания.</li>
+      <li><b>Пороги правила (σ0, k, 0,30, «два подряд») не валидированы клинически.</b> Это предложение для обсуждения с врачом.</li>
+      <li><b>Камера при закрытом глазе.</b> Модель достраивает закрытый ладонью глаз, поэтому расстояние берётся медианой трёх оценок. Точность измерит E0.</li>
+      <li><b>Не контролируется,</b> какой глаз закрыт и плотно ли. Освещение контролируется лишь косвенно, по яркости кадра.</li>
+      <li><b>Новизна ограничена.</b> Тесты зрения на МКС существуют, VR-версию финансирует NASA [7]. Новое здесь: тест без оператора, контроль расстояния камерой и решение по личной норме.</li>
+    </ul>
+  </div>
+</section>
+
+<section id="impact">
+  <div class="rail">07</div>
+  <div class="body">
+    <h2>Значение и следующий шаг</h2>
+    <p>NASA уже снабжает экипаж запасными очками, и с правильной коррекцией зрение остаётся нормальным [3]. Практическая ценность проекта в другом: астронавт <i>объективно и сам</i> понимает, когда пора менять очки, и отличает ухудшение, которое исправляется оптикой, от того, которое не исправляется (тест в более сильных очках). Второе — повод срочно связаться с врачом.</p>
+    <figure class="plate narrow">
+      <img src="fig/c3_fog_lens_far_point_PROPOSED.png" alt="Расчёт: через плюсовую линзу +4 D дальнейшая точка ясного зрения отодвигается с 25 до 50 см при сдвиге в 2 D." loading="lazy">
+      <figcaption><span class="chip p">PROPOSED</span> <span class="chip c">CALCULATED</span> <b>Как обойти маскировку аккомодацией.</b> Через сильную плюсовую («туманящую») линзу аккомодация бессильна. Самое дальнее расстояние, где знак ещё чёткий, равно 100/(P − H)&nbsp;см, где H — гиперметропический сдвиг. Камера уже измеряет расстояние, значит, тот же телефон может измерять сдвиг рефракции в диоптриях в любом возрасте. Пока это идея: не реализована и не проверена.</figcaption>
+    </figure>
+  </div>
+</section>
+
+<section id="refs">
+  <div class="rail">08</div>
+  <div class="body">
+    <h2>Источники и материалы</h2>
+    <ol class="refs">
+      <li>Mader TH, et al. Optic disc edema, globe flattening, choroidal folds, and hyperopic shifts observed in astronauts after long-duration space flight. <i>Ophthalmology</i> 2011;118:2058–69. <a href="https://pubmed.ncbi.nlm.nih.gov/21849212/">PubMed</a></li>
+      <li>Lee AG, et al. Spaceflight associated neuro-ocular syndrome (SANS) and the neuro-ophthalmologic effects of microgravity. <i>npj Microgravity</i> 2020;6:7. <a href="https://pmc.ncbi.nlm.nih.gov/articles/PMC7005826">PMC</a></li>
+      <li>Brunstetter T. SANS: A Briefing for Astronaut Candidates. NASA, 2023. <a href="https://ntrs.nasa.gov/citations/20230006218">NTRS 20230006218</a></li>
+      <li>Vineyard K, et al. Refractive shifts in astronauts during spaceflight. <i>Eye</i> 2024;38:2671–3. <a href="https://pmc.ncbi.nlm.nih.gov/articles/PMC11427682/">PMC</a></li>
+      <li>NASA. Remotely guided on-orbit vision exam, NTRS 20150008173 (2015). <a href="https://ntrs.nasa.gov/api/citations/20150008173/downloads/20150008173.pdf">PDF</a></li>
+      <li>Клинический случай: бортовые измерения остроты, запись наземным оператором. <i>Aerosp Med Hum Perform</i> 2024;95(5):278.</li>
+      <li>University of Nevada, Reno. VR-тест зрения на МКС, грант NASA EPSCoR. 2026. <a href="https://www.unr.edu/nevada-today/news/2026/iss-eye-experiment">Nevada Today</a></li>
+      <li>Healio. Web Vision Technologies awarded TRISH grants for NASA vision devices. 2018.</li>
+      <li>NASA Space Station Blog, 29.07.2026: advanced eye exams aboard the ISS.</li>
+      <li>Bach M. The Freiburg Visual Acuity Test. <i>Optom Vis Sci</i> 1996;73:49–53; Anti-aliasing and dithering in FrACT. <i>Spatial Vision</i> 1997;11:85–89.</li>
+      <li>Arditi A, Cagenello R. <i>Invest Ophthalmol Vis Sci</i> 1993;34:120–9 · Smith G. <i>Optom Vis Sci</i> 1991;68:591–8 · Hofstetter HW. <i>Optometry World</i> 1950;38:42–5 · Kontsevich LL, Tyler CW. <i>Vision Res</i> 1999;39:2729–37 · Bland JM, Altman DG. <i>Lancet</i> 1986;1:307–10.</li>
+    </ol>
+    <p>Код, протокол, аудит материалов и скрипты анализа находятся в репозитории <a href="https://github.com/capitalisming/Vision">capitalisming/Vision</a>: <code>app/</code> (приложение), <code>analysis/</code> (обработка и графики), <code>docs/</code> (аудит, протокол, реестр опытов, результаты).</p>
+  </div>
+</section>
+
+<footer>Исследовательский прототип, не медицинское изделие. Не ставит диагноз и не заменяет осмотр. Все графики построены кодом из репозитория; синтетические помечены водяным знаком SIMULATED.</footer>
+</div>
+
+<script>
+// Hero: a small logMAR chart of tumbling E's. Sizes follow the real 0.1-log progression.
+(function () {
+  var svg = document.getElementById('chart');
+  if (!svg) return;
+  var NS = 'http://www.w3.org/2000/svg';
+  var rows = [0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1, 0.0];
+  var orient = [[0, 90, 180, 270, 90], [180, 0, 270, 90, 0], [270, 180, 0, 90, 180], [90, 270, 180, 0, 270],
+                [0, 180, 90, 270, 0], [270, 90, 0, 180, 90], [180, 270, 90, 0, 180], [90, 0, 270, 180, 270]];
+  var unit = 5.2 / Math.pow(10, 0.7); // stroke at 0.0 so that the 0.7 row has a 5.2 px stroke
+  var y = 8;
+  rows.forEach(function (lm, r) {
+    var s = unit * Math.pow(10, lm), h = 5 * s, gap = Math.max(h * 0.9, 6);
+    var label = document.createElementNS(NS, 'text');
+    label.setAttribute('x', 352); label.setAttribute('y', y + h / 2 + 3.5);
+    label.setAttribute('text-anchor', 'end'); label.setAttribute('font-size', '9');
+    label.setAttribute('font-family', 'IBM Plex Mono, monospace'); label.setAttribute('fill', '#4b5260');
+    label.textContent = lm.toFixed(1);
+    svg.appendChild(label);
+    var total = 5 * h + 4 * gap, x0 = (310 - total) / 2;
+    for (var i = 0; i < 5; i++) {
+      var g = document.createElementNS(NS, 'g');
+      var cx = x0 + i * (h + gap) + h / 2, cy = y + h / 2;
+      g.setAttribute('transform', 'translate(' + cx + ' ' + cy + ') rotate(' + orient[r][i] + ')');
+      [[-2.5, -2.5, 1, 5], [-2.5, -2.5, 5, 1], [-2.5, -0.5, 5, 1], [-2.5, 1.5, 5, 1]].forEach(function (b) {
+        var rect = document.createElementNS(NS, 'rect');
+        rect.setAttribute('x', b[0] * s); rect.setAttribute('y', b[1] * s);
+        rect.setAttribute('width', b[2] * s); rect.setAttribute('height', b[3] * s);
+        rect.setAttribute('fill', '#12161d');
+        g.appendChild(rect);
+      });
+      svg.appendChild(g);
+    }
+    y += h + Math.max(h * 0.55, 7);
+  });
+  svg.setAttribute('viewBox', '0 0 360 ' + Math.ceil(y));
+})();
+</script>

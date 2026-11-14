@@ -1,0 +1,56 @@
+name: Build and deploy (app + project page)
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Unit tests
+        working-directory: app
+        run: npm ci && npx vitest run
+      - name: Build app
+        working-directory: app
+        env:
+          BASE_PATH: ./
+        run: npm run build
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Analysis tests
+        working-directory: analysis
+        run: pip install -r requirements.txt && python -m pytest -q
+      - name: Assemble site
+        run: |
+          mkdir -p _site
+          { echo '<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">'; cat site/index.html; } > _site/index.html
+          cp -r site/img site/fig _site/
+          cp -r app/dist _site/app
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

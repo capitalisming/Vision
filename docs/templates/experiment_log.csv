@@ -1,0 +1,2 @@
+experiment_id,run_label,date_time_local,participant_id,age_years,eye_order,correction_worn,added_lens_D_nominal,added_lens_D_verified,device_model,screen_ppi_from_app,room_light,distance_mode,app_session_id,status(success|failed|poor_quality|incomplete|repeat),deviations_from_protocol,observations_problems,operator
+E1,B1,,P01,,OD>OS,,0,,,,,camera,,,,,
