@@ -1,0 +1,120 @@
+<!doctype html>
+<!-- AI-assisted (Claude Code), reviewed by a team member. -->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Vision self-check (prototype)</title>
+  <link rel="stylesheet" href="src/styles.css">
+  <script type="module" src="src/app.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <span class="brand">Vision self-check <small>prototype</small></span>
+    <nav aria-label="Main">
+      <button type="button" data-nav="screen-home">Home</button>
+      <button type="button" data-nav="screen-calib">Screen</button>
+      <button type="button" data-nav="screen-camera">Camera</button>
+      <button type="button" data-nav="screen-setup">New session</button>
+      <button type="button" data-nav="screen-trend">Trend</button>
+      <button type="button" data-nav="screen-action">Action</button>
+    </nav>
+  </header>
+
+  <div id="app-error" class="banner error" role="alert" hidden></div>
+
+  <main>
+    <section id="screen-home" class="screen" data-title="Home">
+      <h1>Visual acuity self-check</h1>
+      <p class="lede">A Landolt C acuity test that scales each sign to your distance from the screen.
+        Pilot prototype for monitoring functional vision change; it is not a medical device.</p>
+      <ol class="steps">
+        <li><span class="step-state" data-state="calib"></span> Calibrate the screen with a bank card.</li>
+        <li>Optional: calibrate the camera for distance tracking.</li>
+        <li>Set up a session and run the test.</li>
+      </ol>
+      <div class="row">
+        <button type="button" class="primary" data-nav="screen-setup">New session</button>
+        <button type="button" data-nav="screen-calib">Calibrate screen</button>
+      </div>
+
+      <h2>Sessions</h2>
+      <div class="row">
+        <button type="button" data-action="export-csv">Export CSV</button>
+        <button type="button" data-action="export-json">Export JSON</button>
+        <label class="file-button">Import JSON<input type="file" accept="application/json,.json" data-action="import-json" hidden></label>
+        <span class="io-status" role="status"></span>
+      </div>
+      <div class="table-wrap"><table class="sessions">
+        <thead><tr><th>Started</th><th>Participant</th><th>Eye</th><th>Glasses</th><th>Condition</th>
+          <th>Mode</th><th>Outcome</th><th>logMAR</th><th></th></tr></thead>
+        <tbody></tbody>
+      </table></div>
+    </section>
+
+    <section id="screen-calib" class="screen" data-title="Screen calibration" hidden></section>
+
+    <!-- Owned by participant 2 (src/camera-calib.js). Left empty on purpose. -->
+    <section id="screen-camera" class="screen" data-title="Camera calibration" hidden></section>
+
+    <section id="screen-setup" class="screen" data-title="Session setup" hidden>
+      <h2>Session setup</h2>
+      <!-- method="dialog": a submit before app.js loads must never navigate or put data in the URL. -->
+      <form id="setup-form" method="dialog" novalidate>
+        <label>Participant code
+          <input name="participant" required maxlength="16" pattern="[A-Za-z0-9_-]{1,16}" autocomplete="off"
+                 placeholder="A, B or M">
+          <small>Code only, never a name.</small>
+        </label>
+        <fieldset><legend>Eye</legend>
+          <label><input type="radio" name="eye" value="OD" required> OD (right)</label>
+          <label><input type="radio" name="eye" value="OS"> OS (left)</label>
+          <label><input type="radio" name="eye" value="OU"> OU (both)</label>
+        </fieldset>
+        <fieldset><legend>Glasses</legend>
+          <label><input type="radio" name="glasses" value="yes" required> Yes</label>
+          <label><input type="radio" name="glasses" value="no"> No</label>
+        </fieldset>
+        <label>Condition
+          <input name="condition" required maxlength="40" list="condition-list" autocomplete="off">
+          <datalist id="condition-list">
+            <option value="practice"><option value="rep"><option value="dose_noglasses">
+            <option value="dose_glasses"><option value="e2e_glasses"><option value="e2e_noglasses">
+          </datalist>
+        </label>
+        <label>Target distance, mm
+          <input name="targetMm" type="number" required min="200" max="6000" step="1" value="1000">
+        </label>
+        <fieldset><legend>Distance source</legend>
+          <label><input type="radio" name="distanceMode" value="manual" checked> Manual (measured with a tape)</label>
+          <label><input type="radio" name="distanceMode" value="camera"> Camera</label>
+        </fieldset>
+        <p class="hint" data-role="floor-hint"></p>
+        <ul class="form-errors" role="alert"></ul>
+        <div class="row">
+          <button type="submit" class="primary">Start test</button>
+          <button type="button" data-nav="screen-home">Cancel</button>
+        </div>
+      </form>
+    </section>
+
+    <section id="screen-test" class="screen screen-test" data-title="Test" hidden>
+      <div id="test-root"></div>
+      <video id="camera-video" playsinline muted hidden></video>
+    </section>
+
+    <section id="screen-result" class="screen" data-title="Result" hidden>
+      <h2>Result</h2>
+      <div id="result-body"></div>
+      <div class="row">
+        <button type="button" class="primary" data-nav="screen-setup">New session</button>
+        <button type="button" data-nav="screen-home">Home</button>
+      </div>
+    </section>
+
+    <!-- Owned by participant 2 (src/ui-trend.js, src/ui-action.js). Left empty on purpose. -->
+    <section id="screen-trend" class="screen" data-title="Trend" hidden></section>
+    <section id="screen-action" class="screen" data-title="Action" hidden></section>
+  </main>
+</body>
+</html>
