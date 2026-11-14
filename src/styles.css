@@ -92,25 +92,61 @@ button.link.danger:hover { color: var(--danger); }
 .banner.error { background: rgb(255 107 94 / 0.12); color: var(--danger); }
 
 /* ---------- home: the iris ---------- */
-.hero { display: flex; flex-direction: column; align-items: center; text-align: center; padding: 40px 0 8px; }
-.eye { position: relative; width: min(74vw, 380px); aspect-ratio: 1; margin: 0 0 56px; }
+/* The eye stays pinned while the copy and the facts scroll over it; --p (set by home-scroll.js) drives the dive. */
+#screen-home { overflow-x: clip; } /* the zoomed iris must not create a horizontal scrollbar */
+.eye-pin { position: sticky; top: 12px; z-index: 0; display: flex; justify-content: center; margin-top: 40px; padding-bottom: 56px; pointer-events: none; }
+.hero-copy { position: relative; z-index: 1; display: flex; flex-direction: column; align-items: center; text-align: center; padding-bottom: 8px; }
+.eye {
+  position: relative; width: min(74vw, 380px); aspect-ratio: 1;
+  transform: translateY(calc(var(--p, 0) * 22vh)) scale(calc(1 + var(--p, 0) * 1.6));
+  opacity: clamp(0, calc((0.95 - var(--p, 0)) * 2.5), 1); /* gone before the end: the pupil becomes the page */
+  will-change: transform, opacity;
+}
 /* Porthole: a single hairline around the iris. */
 .eye::before { content: ""; position: absolute; inset: -16px; border-radius: 50%; border: 1px solid var(--line-2); }
-.eye-iris { position: absolute; inset: 0; width: 100%; height: 100%; border-radius: 50%; }
+/*
+ * Iris colour journey on scroll, "sunrise from orbit": teal and amber, then cobalt and gold, then violet and coral.
+ * The canvas holds only the grey structure; .eye-tint gives it hue and saturation (mix-blend-mode: color).
+ */
+#screen-home {
+  --in-0: #d39a4f;  --out-0: #2f8f95;
+  --in-1: #ecc768;  --out-1: #3a55d6;
+  --in-2: #f2875a;  --out-2: #7b3fc0;
+  --k1: clamp(0%, calc(var(--p, 0) * 222%), 100%);          /* 0 → 1 over p 0 … 0.45 */
+  --k2: clamp(0%, calc((var(--p, 0) - 0.45) * 222%), 100%); /* 0 → 1 over p 0.45 … 0.9 */
+  --iris-in: color-mix(in oklch, color-mix(in oklch, var(--in-0), var(--in-1) var(--k1)), var(--in-2) var(--k2));
+  --iris-out: color-mix(in oklch, color-mix(in oklch, var(--out-0), var(--out-1) var(--k1)), var(--out-2) var(--k2));
+}
+.eye-iris {
+  position: absolute; inset: 0; border-radius: 50%; overflow: hidden; isolation: isolate;
+  filter: brightness(clamp(0.62, calc(1 - var(--p, 0) * 1.4), 1)); /* dims a little as you dive */
+  rotate: calc(var(--p, 0) * 40deg);
+}
+.eye-canvas { display: block; width: 100%; height: 100%; }
+.eye-tint {
+  position: absolute; inset: 0; mix-blend-mode: color;
+  background: radial-gradient(circle closest-side, var(--iris-in) 0 37%, var(--iris-out) 54%);
+  mask-image: radial-gradient(circle closest-side, #000 97.5%, transparent 99%); /* no tinted rim past the disc edge */
+}
 .eye-pupil {
-  position: absolute; inset: 35%; border-radius: 50%;
+  position: absolute; inset: calc(35% - var(--p, 0) * 13%); border-radius: 50%; /* dilates with --p */
   background: radial-gradient(circle at 46% 40%, #14181a, #000 72%);
   box-shadow: 0 0 0 1px rgb(0 0 0 / 0.5), 0 0 28px 8px rgb(0 0 0 / 0.45);
   animation: breathe 9s ease-in-out infinite;
   transition: transform 500ms var(--ease);
 }
-.hero:has(button.primary:hover) .eye-pupil { animation: none; transform: scale(0.86); }
-.eye-ring { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; animation: seek 14s infinite; }
+#screen-home:has(button.primary:hover) .eye-pupil { animation: none; transform: scale(0.86); }
+.eye-ring {
+  position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; animation: seek 14s infinite;
+  scale: calc(1 + var(--p, 0) * 0.59); /* stays just outside the dilating pupil */
+  opacity: clamp(0, calc(1.1 - var(--p, 0) * 1.6), 1);
+}
 .eye-ring path { fill: none; stroke: rgb(255 255 255 / 0.8); stroke-width: 0.9; }
 /* A window reflection on the cornea, which also reads as the porthole itself. */
 .eye-glint {
   position: absolute; left: 57%; top: 22%; width: 15%; height: 9%; border-radius: 28%;
   background: rgb(255 255 255 / 0.85); filter: blur(2.5px); transform: rotate(-16deg);
+  opacity: clamp(0, calc(1 - var(--p, 0) * 2), 1);
 }
 @keyframes breathe { 0%, 100% { transform: scale(1); } 50% { transform: scale(0.92); } }
 /* The gap jumps between orientations, like the sign in the test. */
@@ -118,9 +154,15 @@ button.link.danger:hover { color: var(--danger); }
   0%, 22% { rotate: 0deg; } 22.5%, 47% { rotate: 180deg; } 47.5%, 72% { rotate: 90deg; } 72.5%, 100% { rotate: 270deg; }
 }
 .state { margin: 14px 0 28px; color: var(--muted); }
+.hero-copy h1, .hero-copy .state { text-shadow: 0 1px 14px rgb(0 0 0 / 0.75); } /* readable while passing over the iris */
 
 /* Three quiet facts, separated by hairlines. */
-.facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); margin: 64px 0 0; border-top: 1px solid var(--line); }
+.facts {
+  position: relative; z-index: 1; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); margin: 38vh 0 0; border-top: 1px solid var(--line);
+  /* Appear late in the dive; without --p (no script) they are simply visible. */
+  opacity: clamp(0, calc((var(--p, 1) - 0.4) * 3.3), 1);
+  translate: 0 calc((1 - clamp(0, (var(--p, 1) - 0.4) * 3.3, 1)) * 28px);
+}
 .facts > div { padding: 24px 16px 0 0; }
 .facts > div + div { padding-left: 24px; border-left: 1px solid var(--line); }
 .facts dt { color: var(--muted); font-size: 0.8125rem; }
@@ -172,6 +214,13 @@ details.more[open] > summary { margin-bottom: -8px; }
 .form-errors:empty { display: none; }
 .form-errors li { color: var(--danger); font-size: 0.875rem; }
 .setup .row { margin-top: 0; }
+/* Camera choice only matters for camera distance; the Pi address only for the Pi camera. */
+#setup-form:not(:has([name=distanceMode][value=camera]:checked)) :is(.camera-only, .pi-only),
+#setup-form:not(:has([name=cameraSource][value=pi]:checked)) .pi-only { display: none; }
+.pi-status { font-size: 0.875rem; color: var(--muted); }
+.pi-status.is-ok { color: var(--ok); }
+.pi-status.is-error { color: var(--danger); }
+.pi-preview { display: block; width: 100%; max-width: 360px; border-radius: 14px; background: #000; }
 
 /* ---------- screen calibration ---------- */
 .calib { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; margin-top: 28px; }
@@ -253,9 +302,8 @@ dl.kv dt:last-of-type, dl.kv dd:last-of-type { border-bottom: 0; }
 @media (max-width: 560px) {
   .topbar { flex-wrap: wrap; gap: 4px 16px; padding-top: 16px; }
   .topbar nav { margin-left: 0; width: 100%; }
-  .hero { padding-top: 28px; }
-  .eye { margin-bottom: 44px; }
-  .facts { margin-top: 48px; }
+  .eye-pin { margin-top: 28px; padding-bottom: 44px; }
+  .facts { margin-top: 30vh; }
   .facts > div { padding: 20px 8px 0 0; }
   .facts > div + div { padding-left: 14px; }
   .facts dd:not(.sub) { font-size: 1.625rem; }

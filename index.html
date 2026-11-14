@@ -33,14 +33,16 @@
 
   <main>
     <section id="screen-home" class="screen" data-title="Home">
-      <div class="hero">
-        <div class="eye" aria-hidden="true">
-          <canvas class="eye-iris"></canvas>
+      <div class="eye-pin" aria-hidden="true">
+        <div class="eye">
+          <div class="eye-iris"><canvas class="eye-canvas"></canvas><span class="eye-tint"></span></div>
           <span class="eye-pupil"></span>
           <!-- The pupil is ringed by a Landolt C; its gap turns now and then, like the test sign. -->
           <svg class="eye-ring" viewBox="-50 -50 100 100"><path d="M21.73 3.44A22 22 0 1 1 21.73-3.44"/></svg>
           <span class="eye-glint"></span>
         </div>
+      </div>
+      <div class="hero-copy">
         <h1>Check your vision</h1>
         <p class="state" data-stat="state"></p>
         <div class="row center">
@@ -134,6 +136,24 @@
                 <label><input type="radio" name="distanceMode" value="camera"><span>Camera</span></label>
               </div>
             </fieldset>
+            <fieldset class="field camera-only"><legend class="label">Camera</legend>
+              <div class="seg">
+                <label><input type="radio" name="cameraSource" value="local" checked><span>This computer</span></label>
+                <label><input type="radio" name="cameraSource" value="pi"><span>Raspberry Pi</span></label>
+              </div>
+            </fieldset>
+            <div class="field pi-only">
+              <label class="field">
+                <span class="label">Raspberry Pi address</span>
+                <input name="piUrl" autocomplete="off" inputmode="url" placeholder="raspberrypi.local:8000">
+                <small>Leave empty when this page is opened from the Pi (pi/camera_server.py).</small>
+              </label>
+              <div class="row">
+                <button type="button" class="small" data-action="pi-check">Check camera</button>
+                <span class="pi-status" role="status"></span>
+              </div>
+              <video class="pi-preview" muted playsinline hidden></video>
+            </div>
           </details>
 
           <ul class="form-errors" role="alert"></ul>

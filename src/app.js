@@ -5,6 +5,8 @@ import { getPxPerMm, mountScreenCalibration, calibrationDprChanged } from './scr
 import { screenFloorLogmar } from './optotype.js';
 import { runAcuityTest } from './acuity-test.js';
 import { paintIris } from './iris.js';
+import { initHomeScroll } from './home-scroll.js';
+import { connectPiCamera, normalizePiUrl } from './pi-camera.js';
 import { listSessions, saveSession, deleteSession, exportCsv, exportJson, importJson } from './storage.js';
 
 const state = {
@@ -12,9 +14,15 @@ const state = {
   testRunning: false,
   lastSession: null,
   distance: null, // participant 2's src/distance.js module, loaded on first camera-mode session
+  piCamera: null, // Raspberry Pi feed into #camera-video while a camera test runs
+  piPreview: null, // Raspberry Pi feed into the setup preview after "Check camera"
+  piTimer: 0,
 };
 
 const $ = (sel, root = document) => root.querySelector(sel);
+
+// Scroll story of the home iris; call the returned function whenever Home is shown.
+const syncHomeScroll = initHomeScroll($('#screen-home'), () => state.screen === 'screen-home');
 
 // ---------- errors ----------
 
@@ -47,9 +55,12 @@ function show(id) {
     b.classList.toggle('active', Boolean(b.closest('nav')) && b.dataset.nav === id);
   });
   document.title = `${target.dataset.title} · Vision self-check`;
+  if (id !== 'screen-setup') stopPiPreview();
   state.screen = id;
+  window.scrollTo(0, 0); // every screen starts at its top
   clearError();
   enterHandlers[id]?.();
+  if (id === 'screen-home') syncHomeScroll();
   // Integration point for participant 2's screens (screen-camera, screen-trend, screen-action).
   document.dispatchEvent(new CustomEvent('app:screen-enter', { detail: { id } }));
 }
@@ -221,6 +232,8 @@ function readForm() {
     condition: String(fd.get('condition') ?? '').trim(),
     targetMm: Number(fd.get('targetMm')),
     distanceMode: fd.get('distanceMode'),
+    cameraSource: fd.get('cameraSource') ?? 'local',
+    piUrl: String(fd.get('piUrl') ?? ''),
   };
 }
 
@@ -233,6 +246,9 @@ function validateSetup(v, pxPerMm) {
   if (!v.condition || v.condition.length > 40 || /[\r\n]/.test(v.condition)) errs.push('Condition label is required (max 40 characters).');
   if (!Number.isInteger(v.targetMm) || v.targetMm < 200 || v.targetMm > 6000) errs.push('Target distance must be a whole number of mm between 200 and 6000.');
   if (!['manual', 'camera'].includes(v.distanceMode)) errs.push('Choose a distance source.');
+  if (v.distanceMode === 'camera' && v.cameraSource === 'pi') {
+    try { normalizePiUrl(v.piUrl, location.origin); } catch (err) { errs.push(err.message); }
+  }
   return errs;
 }
 
@@ -292,10 +308,19 @@ async function startTest(v) {
     getDistance = () => ({ mm, ageMs: 0, ok: true, reason: '' });
   } else {
     try {
+      const video = $('#camera-video');
+      if (v.cameraSource === 'pi') {
+        stopPiPreview();
+        stopPiCamera();
+        state.piCamera = await connectPiCamera(video, normalizePiUrl(v.piUrl, location.origin));
+      }
       const mod = await loadDistanceModule();
-      if (typeof mod.startDistance === 'function') await mod.startDistance($('#camera-video'));
+      // With the Pi source the video element already plays the Pi stream; distance.js must use it as it is
+      // (to be agreed with participant 2: startDistance(videoEl) must not replace an existing srcObject).
+      if (typeof mod.startDistance === 'function') await mod.startDistance(video);
       getDistance = mod.getDistance;
     } catch (err) {
+      stopPiCamera();
       showError(err.message); // Failure D: no camera data, no test, no number.
       return;
     }
@@ -314,12 +339,14 @@ async function startTest(v) {
   } catch (err) {
     state.testRunning = false;
     document.body.classList.remove('testing');
+    stopPiCamera();
     show('screen-setup');
     showError(`The test could not run: ${err.message}`);
     return;
   }
   state.testRunning = false;
   document.body.classList.remove('testing');
+  stopPiCamera();
 
   try {
     saveSession(session);
@@ -329,6 +356,52 @@ async function startTest(v) {
   state.lastSession = session;
   show('screen-result');
 }
+
+// ---------- Raspberry Pi camera ----------
+
+function stopPiCamera() {
+  state.piCamera?.stop();
+  state.piCamera = null;
+}
+
+function stopPiPreview() {
+  clearInterval(state.piTimer);
+  state.piPreview?.stop();
+  state.piPreview = null;
+  $('.pi-preview').hidden = true;
+}
+
+$('[data-action=pi-check]').addEventListener('click', async () => {
+  const status = $('.pi-status');
+  const say = (text, tone = '') => { status.textContent = text; status.className = `pi-status ${tone}`; };
+  stopPiPreview();
+  let base;
+  try {
+    base = normalizePiUrl(form.piUrl.value, location.origin);
+  } catch (err) {
+    say(err.message, 'is-error');
+    return;
+  }
+  say(`Connecting to ${base}…`);
+  try {
+    const preview = $('.pi-preview');
+    state.piPreview = await connectPiCamera(preview, base);
+    preview.hidden = false;
+    const tick = () => {
+      const s = state.piPreview?.status();
+      if (!s) return;
+      if (s.state === 'live') {
+        say(`Live · ${s.width}×${s.height} · ${s.fps.toFixed(0)} fps · frame ${Math.round(s.ageMs)} ms old`, 'is-ok');
+      } else {
+        say(`Connection lost: ${s.error}`, 'is-error');
+      }
+    };
+    tick();
+    state.piTimer = setInterval(tick, 1000);
+  } catch (err) {
+    say(err.message, 'is-error');
+  }
+});
 
 // ---------- result ----------
 
@@ -420,4 +493,4 @@ function renderScale(s) {
 
 show('screen-home');
 // Decorative iris on the home screen, drawn after the first paint so it never delays the page.
-setTimeout(() => { const canvas = $('.eye-iris'); if (canvas) paintIris(canvas); }, 0);
+setTimeout(() => { const canvas = $('.eye-canvas'); if (canvas) paintIris(canvas); }, 0);

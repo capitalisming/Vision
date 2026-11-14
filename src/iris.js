@@ -1,5 +1,6 @@
 // AI-assisted (Claude Code), reviewed by a team member.
 // Procedural iris texture for the home screen, drawn once at start-up from a seed.
+// It is drawn in greys (structure only); the colour comes from a CSS tint layer, so it can change on scroll.
 // Decorative only: no measurement, score or stored value depends on it.
 
 const TAU = Math.PI * 2;
@@ -30,14 +31,14 @@ export function ringNoise(u, v, n, seed) {
   return a + (b - a) * fu + (c - a) * fv + (a - b - c + d) * fu * fv;
 }
 
-const INNER = [205, 150, 76]; // warm ring around the pupil
-const OUTER = [58, 134, 138]; // cool outer zone
+const INNER_LIGHTNESS = 0.62; // the zone around the pupil is lighter than the outer zone
+const OUTER_LIGHTNESS = 0.48;
 
 /**
- * Colour of one point of the iris disc. `r` is the radius (0 centre, 1 outer edge) and `a` the angle as a
- * fraction of a full turn. Writes [R, G, B, A] (0-255) into `out`.
+ * Grey level of one point of the iris disc. `r` is the radius (0 centre, 1 outer edge) and `a` the angle as a
+ * fraction of a full turn. Writes [G, G, G, A] (0-255) into `out`.
  */
-export function irisColor(r, a, seed, out) {
+export function irisPixel(r, a, seed, out) {
   if (r >= 1) { out[0] = out[1] = out[2] = out[3] = 0; return out; }
   const fibres = 0.5 * ringNoise(a * 220, r * 5, 220, seed)
     + 0.3 * ringNoise(a * 440, r * 9 + 3, 440, seed + 1)
@@ -50,14 +51,13 @@ export function irisColor(r, a, seed, out) {
   lum *= 1 - 0.4 * crypt;
   lum *= 1 - 0.85 * smoothstep(0.8, 0.99, r); // dark limbal ring
   lum *= 0.5 + 0.5 * smoothstep(0.17, 0.28, r); // shade at the pupil edge
-  for (let k = 0; k < 3; k++) {
-    out[k] = Math.min(255, Math.max(0, (INNER[k] + (OUTER[k] - INNER[k]) * t) * lum));
-  }
+  const grey = Math.min(255, Math.max(0, 255 * (INNER_LIGHTNESS + (OUTER_LIGHTNESS - INNER_LIGHTNESS) * t) * lum));
+  out[0] = out[1] = out[2] = grey;
   out[3] = 255 * (1 - smoothstep(0.985, 1, r));
   return out;
 }
 
-/** RGBA pixels (size x size) of the iris disc on a transparent background. */
+/** RGBA pixels (size x size) of the grey iris disc on a transparent background. */
 export function renderIris(size, seed = 1) {
   const data = new Uint8ClampedArray(size * size * 4);
   const px = [0, 0, 0, 0];
@@ -66,7 +66,7 @@ export function renderIris(size, seed = 1) {
     for (let x = 0; x < size; x++) {
       const dx = (x - c) / c;
       const dy = (y - c) / c;
-      irisColor(Math.hypot(dx, dy), (Math.atan2(dy, dx) + Math.PI) / TAU, seed, px);
+      irisPixel(Math.hypot(dx, dy), (Math.atan2(dy, dx) + Math.PI) / TAU, seed, px);
       data.set(px, (y * size + x) * 4);
     }
   }
