@@ -1,0 +1,6 @@
+# Keep third-party vendor assets byte-for-byte: the SHA-256 list in vendor/README.md must
+# match what is checked out. Line-ending conversion would change the .js/.mjs hashes.
+vendor/** -text
+
+*.wasm binary
+*.task binary

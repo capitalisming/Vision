@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>vendor smoke test</title>
+    <style>
+      body { font: 16px/1.5 system-ui, sans-serif; padding: 24px; }
+      #result { font-size: 1.2rem; font-weight: 700; }
+      .ok { color: #15803d; }
+      .fail { color: #b91c1c; }
+      code { background: #eef2f6; padding: 2px 5px; border-radius: 4px; }
+    </style>
+  </head>
+  <body>
+    <h1>MediaPipe vendor smoke test</h1>
+    <p>
+      Loads <code>vendor/tasks-vision/vision_bundle.mjs</code>, the local WASM runtime and
+      <code>vendor/models/face_landmarker.task</code>. Needs no camera and no network; serve it
+      from <code>localhost</code> (ES modules do not load from <code>file://</code>).
+    </p>
+    <p id="result">Running…</p>
+    <script type="module">
+      const out = document.getElementById('result');
+      const set = (text, ok) => {
+        out.textContent = text;
+        out.className = ok ? 'ok' : 'fail';
+        document.title = ok ? `OK ${text}` : `FAIL ${text}`;
+      };
+      try {
+        const { FaceLandmarker, FilesetResolver } = await import('../vendor/tasks-vision/vision_bundle.mjs');
+        const wasm = new URL('../vendor/tasks-vision/wasm', import.meta.url).href;
+        const model = new URL('../vendor/models/face_landmarker.task', import.meta.url).href;
+        const fileset = await FilesetResolver.forVisionTasks(wasm);
+        const landmarker = await FaceLandmarker.createFromOptions(fileset, {
+          baseOptions: { modelAssetPath: model, delegate: 'CPU' },
+          runningMode: 'IMAGE',
+          numFaces: 2,
+        });
+        const version = landmarker.constructor?.name ?? 'FaceLandmarker';
+        landmarker.close();
+        set(`OK — ${version} created from local vendor files`, true);
+      } catch (err) {
+        set(`FAIL — ${err && err.message ? err.message : err}`, false);
+        console.error(err);
+      }
+    </script>
+  </body>
+</html>

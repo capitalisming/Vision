@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Near Vision Monitor · Participant 2 (camera · norm · action)</title>
+    <link rel="stylesheet" href="./src/ui.css" />
+    <style>
+      /* Harness-only styles. The real shell is participant 1's; these rules exist so the
+         three screens can be opened and checked on their own. */
+      body {
+        margin: 0;
+        background: #eef2f6;
+        color: #10202c;
+        font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      }
+      header.harness {
+        background: #10202c;
+        color: #fff;
+        padding: 14px 16px 0;
+      }
+      header.harness h1 {
+        font-size: 1rem;
+        margin: 0 0 10px;
+        font-weight: 700;
+        letter-spacing: 0.01em;
+      }
+      header.harness small {
+        color: #9fb0be;
+        font-weight: 400;
+      }
+      nav.harness {
+        display: flex;
+        gap: 6px;
+      }
+      nav.harness button {
+        font: inherit;
+        font-weight: 600;
+        padding: 10px 14px;
+        border: 0;
+        border-radius: 10px 10px 0 0;
+        background: transparent;
+        color: #c7d3dd;
+        cursor: pointer;
+      }
+      nav.harness button[aria-selected="true"] {
+        background: #eef2f6;
+        color: #10202c;
+      }
+      main.harness {
+        padding: 0 0 40px;
+      }
+      .screen[hidden] {
+        display: none;
+      }
+      .demo-note {
+        max-width: 920px;
+        margin: 0 auto;
+        padding: 12px 16px 0;
+        font-size: 0.85rem;
+        color: #5b6b7a;
+      }
+      .demo-note button {
+        font: inherit;
+        font-weight: 600;
+        padding: 6px 10px;
+        margin-left: 6px;
+        border: 1px solid #d7e0e8;
+        border-radius: 8px;
+        background: #fff;
+        cursor: pointer;
+      }
+    </style>
+  </head>
+  <body>
+    <header class="harness">
+      <h1>Near Vision Monitor <small>· Participant 2: camera, norm, action</small></h1>
+      <nav class="harness" role="tablist" aria-label="Screens">
+        <button role="tab" data-tab="camera" aria-selected="true">Camera</button>
+        <button role="tab" data-tab="trend" aria-selected="false">Trend</button>
+        <button role="tab" data-tab="action" aria-selected="false">Action</button>
+      </nav>
+    </header>
+
+    <p class="demo-note" data-role="source"></p>
+
+    <main class="harness">
+      <section id="screen-camera" class="screen" role="tabpanel"></section>
+      <section id="screen-trend" class="screen" role="tabpanel" hidden></section>
+      <section id="screen-action" class="screen" role="tabpanel" hidden></section>
+    </main>
+
+    <script type="module">
+      import { mountCameraScreen } from './src/camera-calib.js';
+      import { mountTrendScreen } from './src/ui-trend.js';
+      import { mountActionScreen } from './src/ui-action.js';
+
+      const DAY = 864e5;
+      const at = (daysAgo, hour = 9) => {
+        const d = new Date(Date.now() - daysAgo * DAY);
+        d.setHours(hour, 0, 0, 0);
+        return d.toISOString();
+      };
+
+      /** Demo sessions: five baseline sessions, one inside, one single, two persistent. */
+      function demoSessions() {
+        const base = [0.1, 0.12, 0.08, 0.1, 0.1];
+        const rows = base.map((logMAR, i) => ({
+          id: `demo-P01-OD-${i + 1}`,
+          participant: 'P01',
+          eye: 'OD',
+          glasses: true,
+          targetMm: 400,
+          logMAR,
+          floorHit: false,
+          timestamp: at(12 - i * 2),
+        }));
+        rows.push(
+          { id: 'demo-P01-OD-6', participant: 'P01', eye: 'OD', glasses: true, targetMm: 400, logMAR: 0.16, floorHit: false, timestamp: at(2, 9) },
+          { id: 'demo-P01-OD-9', participant: 'P01', eye: 'OD', glasses: true, targetMm: 400, logMAR: null, floorHit: true, reason: 'Floor hit: no number', timestamp: at(2, 15) },
+          { id: 'demo-P01-OD-7', participant: 'P01', eye: 'OD', glasses: true, targetMm: 400, logMAR: 0.34, floorHit: false, timestamp: at(1, 9) },
+          { id: 'demo-P01-OD-8', participant: 'P01', eye: 'OD', glasses: true, targetMm: 400, logMAR: 0.34, floorHit: false, timestamp: at(0, 9) },
+        );
+        rows.push(
+          { id: 'demo-P01-OS-1', participant: 'P01', eye: 'OS', glasses: true, targetMm: 400, logMAR: 0.1, floorHit: false, timestamp: at(10) },
+          { id: 'demo-P01-OS-2', participant: 'P01', eye: 'OS', glasses: true, targetMm: 400, logMAR: 0.12, floorHit: false, timestamp: at(8) },
+          { id: 'demo-P01-OS-3', participant: 'P01', eye: 'OS', glasses: true, targetMm: 400, logMAR: 0.11, floorHit: false, timestamp: at(6) },
+        );
+        rows.push(
+          { id: 'demo-P02-OD-1', participant: 'P02', eye: 'OD', glasses: false, targetMm: 400, logMAR: 0.22, floorHit: false, timestamp: at(3) },
+          { id: 'demo-P02-OD-2', participant: 'P02', eye: 'OD', glasses: false, targetMm: 400, logMAR: 0.24, floorHit: false, timestamp: at(2) },
+        );
+        return rows;
+      }
+
+      const readStorage = () => {
+        try {
+          const data = JSON.parse(localStorage.getItem('nvm_sessions') || 'null');
+          return Array.isArray(data) && data.length ? data : null;
+        } catch {
+          return null;
+        }
+      };
+
+      let stored = readStorage();
+      let sessions = stored ?? demoSessions();
+      const sourceEl = document.querySelector('[data-role="source"]');
+
+      const renderSource = () => {
+        sourceEl.innerHTML = stored
+          ? `Data source: <b>localStorage.nvm_sessions</b> (${stored.length} sessions).`
+          : `Data source: <b>DEMO</b> (${sessions.length} synthetic sessions — not measurements).`;
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.textContent = stored ? 'Use demo sessions' : 'Reload demo sessions';
+        btn.addEventListener('click', () => {
+          stored = stored ? null : readStorage();
+          sessions = stored ?? demoSessions();
+          renderSource();
+          updateScreens();
+        });
+        sourceEl.appendChild(btn);
+      };
+
+      const groupOf = (rows) =>
+        rows && rows.length
+          ? {
+              participant: rows[0].participant,
+              eye: rows[0].eye,
+              glasses: rows[0].glasses,
+              targetMm: rows[0].targetMm,
+            }
+          : null;
+      const updateScreens = () => {
+        trend.update(sessions);
+        action.update(sessions, groupOf(sessions));
+      };
+
+      mountCameraScreen(document.getElementById('screen-camera'), { participants: ['P01', 'P02', 'P03'] });
+      const trend = mountTrendScreen(document.getElementById('screen-trend'), { sessions });
+      const action = mountActionScreen(document.getElementById('screen-action'), {
+        sessions,
+        group: groupOf(sessions),
+      });
+      renderSource();
+
+      const tabs = [...document.querySelectorAll('[data-tab]')];
+      const panels = {
+        camera: document.getElementById('screen-camera'),
+        trend: document.getElementById('screen-trend'),
+        action: document.getElementById('screen-action'),
+      };
+      for (const tab of tabs) {
+        tab.addEventListener('click', () => {
+          for (const t of tabs) t.setAttribute('aria-selected', String(t === tab));
+          for (const [name, panel] of Object.entries(panels)) panel.hidden = name !== tab.dataset.tab;
+        });
+      }
+    </script>
+  </body>
+</html>

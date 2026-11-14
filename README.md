@@ -88,6 +88,38 @@ python run_analysis.py --input ../data/simulated --category SIMULATED --out ../r
 
 См. `docs/02_protocol.md`. Коротко: E0 (рулетка против камеры, 10 мин) → E1 (очки для чтения +1…+4 D, ~25 мин на человека) → E2 (5–7 дней по одному тесту). Экспорт: в приложении «История → Экспорт JSON», файл положить в `data/raw/`, затем запустить `python analysis/run_analysis.py`.
 
+## Прототип участника 2: камера, норма, действия
+
+Отдельный минимальный прототип по контракту модулей команды (vanilla ES-модули, без сборки):
+`src/distance.js`, `src/camera-calib.js`, `src/baseline.js`, `src/ui-trend.js`, `src/ui-action.js`.
+Библиотека MediaPipe, WASM и модель лежат в `vendor/` и грузятся локально — интернет во время
+работы страницы не нужен.
+
+```bash
+python -m http.server 8123
+```
+
+Откройте `http://127.0.0.1:8123/` (камера в браузере работает только на `localhost` или HTTPS).
+По умолчанию экран тренда и экрана действий показывают **DEMO**-сеансы; если в `localStorage`
+лежит ключ `nvm_sessions` (экспорт участника 1), используется он.
+
+Тесты нормы и CSV (Node.js ≥ 20, без зависимостей):
+
+```bash
+node --test tests/baseline.test.mjs tests/distance.test.mjs tests/camera-calib.test.mjs
+```
+
+Проверка, что MediaPipe и модель грузятся из `vendor/` без сети: откройте
+`http://127.0.0.1:8123/tests/vendor-smoke.html` — должно появиться «OK — … created from local
+vendor files».
+
+Версия и лицензии сторонних файлов, их SHA-256 и команды обновления — в `vendor/README.md`.
+
+Калибровка камеры личная: `k` хранится в `localStorage` под ключом `cam_k_<participant>`.
+Расстояние — медиана длины отрезка между наружными уголками глаз за 0,5 с; `mm = k / eyeSpanPx`.
+Порог личной нормы 0,10 logMAR и правило двух сеансов — решения команды, а не клиническая норма;
+это написано на экране действий.
+
 ## Публикация (GitHub Pages)
 
 `.github/workflows/pages.yml` собирает приложение и страницу проекта. Включите в настройках репозитория **Settings → Pages → Source: GitHub Actions**. После этого страница будет доступна по адресу `https://<owner>.github.io/<repo>/`, а приложение — по `…/app/`.

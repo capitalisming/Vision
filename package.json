@@ -1,0 +1,11 @@
+{
+  "name": "nvm-prototype",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Near Vision Monitor prototype: camera distance, personal norm, trend and action screens",
+  "type": "module",
+  "scripts": {
+    "test": "node --test tests/baseline.test.mjs tests/distance.test.mjs tests/camera-calib.test.mjs",
+    "serve": "python -m http.server 8123"
+  }
+}
