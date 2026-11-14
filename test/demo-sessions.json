@@ -1,0 +1,165 @@
+[
+ {
+  "participant": "P1",
+  "eye": "R",
+  "glasses": true,
+  "targetMm": 670,
+  "logMAR": 0.1,
+  "floorHit": false,
+  "timestamp": "2026-11-01T09:00:00.000Z"
+ },
+ {
+  "participant": "P1",
+  "eye": "R",
+  "glasses": true,
+  "targetMm": 670,
+  "logMAR": 0.12,
+  "floorHit": false,
+  "timestamp": "2026-11-02T09:00:00.000Z"
+ },
+ {
+  "participant": "P1",
+  "eye": "R",
+  "glasses": true,
+  "targetMm": 670,
+  "logMAR": 0.08,
+  "floorHit": false,
+  "timestamp": "2026-11-03T09:00:00.000Z"
+ },
+ {
+  "participant": "P1",
+  "eye": "R",
+  "glasses": true,
+  "targetMm": 670,
+  "logMAR": 0.1,
+  "floorHit": false,
+  "timestamp": "2026-11-04T09:00:00.000Z"
+ },
+ {
+  "participant": "P1",
+  "eye": "R",
+  "glasses": true,
+  "targetMm": 670,
+  "logMAR": 0.1,
+  "floorHit": false,
+  "timestamp": "2026-11-05T09:00:00.000Z"
+ },
+ {
+  "participant": "P1",
+  "eye": "R",
+  "glasses": true,
+  "targetMm": 670,
+  "logMAR": 0.16,
+  "floorHit": false,
+  "timestamp": "2026-11-06T09:00:00.000Z"
+ },
+ {
+  "participant": "P1",
+  "eye": "R",
+  "glasses": true,
+  "targetMm": 670,
+  "logMAR": null,
+  "floorHit": false,
+  "timestamp": "2026-11-07T09:00:00.000Z",
+  "reason": "stale distance"
+ },
+ {
+  "participant": "P1",
+  "eye": "R",
+  "glasses": true,
+  "targetMm": 670,
+  "logMAR": 0.34,
+  "floorHit": false,
+  "timestamp": "2026-11-08T09:00:00.000Z"
+ },
+ {
+  "participant": "P1",
+  "eye": "R",
+  "glasses": true,
+  "targetMm": 670,
+  "logMAR": 0.34,
+  "floorHit": false,
+  "timestamp": "2026-11-09T09:00:00.000Z"
+ },
+ {
+  "participant": "P1",
+  "eye": "R",
+  "glasses": false,
+  "targetMm": 670,
+  "logMAR": 0.3,
+  "floorHit": false,
+  "timestamp": "2026-11-01T09:00:00.000Z"
+ },
+ {
+  "participant": "P1",
+  "eye": "R",
+  "glasses": false,
+  "targetMm": 670,
+  "logMAR": 0.42,
+  "floorHit": false,
+  "timestamp": "2026-11-02T09:00:00.000Z"
+ },
+ {
+  "participant": "P1",
+  "eye": "R",
+  "glasses": false,
+  "targetMm": 670,
+  "logMAR": 0.36,
+  "floorHit": false,
+  "timestamp": "2026-11-03T09:00:00.000Z"
+ },
+ {
+  "participant": "P1",
+  "eye": "R",
+  "glasses": false,
+  "targetMm": 670,
+  "logMAR": 0.4,
+  "floorHit": false,
+  "timestamp": "2026-11-04T09:00:00.000Z"
+ },
+ {
+  "participant": "P1",
+  "eye": "R",
+  "glasses": false,
+  "targetMm": 670,
+  "logMAR": 0.38,
+  "floorHit": false,
+  "timestamp": "2026-11-05T09:00:00.000Z"
+ },
+ {
+  "participant": "P1",
+  "eye": "R",
+  "glasses": false,
+  "targetMm": 670,
+  "logMAR": 0.62,
+  "floorHit": false,
+  "timestamp": "2026-11-06T09:00:00.000Z"
+ },
+ {
+  "participant": "P2",
+  "eye": "R",
+  "glasses": true,
+  "targetMm": 670,
+  "logMAR": 0,
+  "floorHit": false,
+  "timestamp": "2026-11-01T09:00:00.000Z"
+ },
+ {
+  "participant": "P2",
+  "eye": "R",
+  "glasses": true,
+  "targetMm": 670,
+  "logMAR": 0.02,
+  "floorHit": false,
+  "timestamp": "2026-11-02T09:00:00.000Z"
+ },
+ {
+  "participant": "P2",
+  "eye": "R",
+  "glasses": true,
+  "targetMm": 670,
+  "logMAR": -0.02,
+  "floorHit": false,
+  "timestamp": "2026-11-03T09:00:00.000Z"
+ }
+]

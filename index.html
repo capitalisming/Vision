@@ -1,0 +1,192 @@
+<!doctype html>
+<!-- AI-assisted (Claude Code), reviewed by a team member. -->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#050607">
+  <title>Vision self-check (prototype)</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Cpath fill='%23d8dde0' d='M35.677 16.8A16 16 0 1 0 35.677 23.2H29.051A9.6 9.6 0 1 1 29.051 16.8Z'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="src/styles.css">
+  <script type="module" src="src/app.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="#" data-nav="screen-home" aria-label="Vision, home">
+      <!-- A Landolt C drawn to its own rule: stroke and gap are one fifth of the diameter. -->
+      <svg class="brand-mark" viewBox="0 0 40 40" aria-hidden="true"><path d="M35.677 16.8A16 16 0 1 0 35.677 23.2H29.051A9.6 9.6 0 1 1 29.051 16.8Z"/></svg>
+      <span>Vision</span>
+    </a>
+    <nav aria-label="Main">
+      <button type="button" data-nav="screen-home">Home</button>
+      <button type="button" data-nav="screen-setup">Test</button>
+      <button type="button" data-nav="screen-progress">Progress</button>
+      <button type="button" data-nav="screen-log">History</button>
+    </nav>
+  </header>
+
+  <div id="app-error" class="banner error" role="alert" hidden></div>
+
+  <main>
+    <section id="screen-home" class="screen" data-title="Home">
+      <div class="eye-pin" aria-hidden="true">
+        <div class="eye">
+          <div class="eye-iris"><canvas class="eye-canvas"></canvas><span class="eye-tint"></span></div>
+          <span class="eye-pupil"></span>
+          <!-- The pupil is ringed by a Landolt C; its gap turns now and then, like the test sign. -->
+          <svg class="eye-ring" viewBox="-50 -50 100 100"><path d="M21.73 3.44A22 22 0 1 1 21.73-3.44"/></svg>
+          <span class="eye-glint"></span>
+        </div>
+      </div>
+      <div class="hero-copy">
+        <h1>Check your vision</h1>
+        <p class="state" data-stat="state"></p>
+        <div class="row center">
+          <button type="button" class="primary large" data-role="primary" data-nav="screen-setup">Start test</button>
+        </div>
+      </div>
+
+      <dl class="facts">
+        <div>
+          <dt>Last result</dt>
+          <dd data-stat="last">—</dd>
+          <dd class="sub" data-stat="last-sub">No measured test yet</dd>
+        </div>
+        <div>
+          <dt>Screen</dt>
+          <dd data-stat="pxmm">—</dd>
+          <dd class="sub"><button type="button" class="link" data-nav="screen-setup" data-step="screen" data-stat="calib-link">Calibrate</button></dd>
+        </div>
+        <div>
+          <dt>Tests</dt>
+          <dd data-stat="count">0</dd>
+          <dd class="sub"><button type="button" class="link" data-nav="screen-log">Open history</button></dd>
+        </div>
+      </dl>
+      <p class="fine">Pilot prototype that monitors functional vision change.</p>
+    </section>
+
+    <!-- One flow instead of three screens: who is testing, the screen calibration, the distance. -->
+    <section id="screen-setup" class="screen" data-title="Test" hidden>
+      <div class="narrow">
+        <h1>New test</h1>
+        <!-- method="dialog": a submit before app.js loads must never navigate or put data in the URL.
+             The form is empty on purpose: every field below belongs to it through its form attribute. -->
+        <form id="setup-form" method="dialog" novalidate></form>
+
+        <ol class="wz" id="wizard">
+          <li class="wz-step" data-step="you">
+            <button type="button" class="wz-head" aria-expanded="false">
+              <span class="wz-n">1</span><span class="wz-title">You</span><span class="wz-sum"></span>
+            </button>
+            <div class="wz-body">
+              <label class="field">
+                <span class="label">Participant code</span>
+                <input name="participant" form="setup-form" maxlength="16" pattern="[A-Za-z0-9_-]{1,16}" autocomplete="off" placeholder="e.g. A">
+                <small>Code only, never a name.</small>
+              </label>
+              <fieldset class="field"><legend class="label">Which eye</legend>
+                <div class="seg">
+                  <label><input type="radio" name="eye" form="setup-form" value="OD"><span>Right</span></label>
+                  <label><input type="radio" name="eye" form="setup-form" value="OS"><span>Left</span></label>
+                  <label><input type="radio" name="eye" form="setup-form" value="OU"><span>Both</span></label>
+                </div>
+              </fieldset>
+              <fieldset class="field"><legend class="label">Glasses</legend>
+                <div class="seg">
+                  <label><input type="radio" name="glasses" form="setup-form" value="yes"><span>On</span></label>
+                  <label><input type="radio" name="glasses" form="setup-form" value="no"><span>Off</span></label>
+                </div>
+              </fieldset>
+              <details class="more">
+                <summary>Study options</summary>
+                <label class="field">
+                  <span class="label">Condition</span>
+                  <input name="condition" form="setup-form" maxlength="40" list="condition-list" autocomplete="off" value="self_check">
+                  <datalist id="condition-list">
+                    <option value="practice"><option value="rep"><option value="dose_noglasses">
+                    <option value="dose_glasses"><option value="e2e_glasses"><option value="e2e_noglasses">
+                  </datalist>
+                  <small>Your own tests count toward your baseline. Tests marked practice stay in the history only. The research analysis reads only the study conditions (rep, dose_*).</small>
+                </label>
+              </details>
+              <div class="wz-actions"><button type="button" class="primary" data-act="continue" disabled>Continue</button></div>
+            </div>
+          </li>
+
+          <li class="wz-step" data-step="screen">
+            <button type="button" class="wz-head" aria-expanded="false">
+              <span class="wz-n">2</span><span class="wz-title">Screen</span><span class="wz-sum"></span>
+            </button>
+            <div class="wz-body">
+              <p class="hint">One time only: it tells the app how big a millimetre is on this screen.</p>
+              <div data-body="screen"></div>
+              <div class="wz-actions"><button type="button" class="primary" data-act="continue" disabled>Continue</button></div>
+            </div>
+          </li>
+
+          <li class="wz-step" data-step="distance">
+            <button type="button" class="wz-head" aria-expanded="false">
+              <span class="wz-n">3</span><span class="wz-title">Distance</span><span class="wz-sum"></span>
+            </button>
+            <div class="wz-body">
+              <div class="seg">
+                <label><input type="radio" name="distanceMode" form="setup-form" value="manual" checked><span>Tape measure</span></label>
+                <label><input type="radio" name="distanceMode" form="setup-form" value="camera"><span>Camera</span></label>
+              </div>
+              <div data-role="camera-embed"></div>
+              <label class="field">
+                <span class="label" data-role="distance-label">Distance to the screen, mm</span>
+                <input name="targetMm" form="setup-form" type="number" min="200" max="6000" step="1" value="1000" inputmode="numeric">
+                <small data-role="floor-hint"></small>
+              </label>
+            </div>
+          </li>
+        </ol>
+
+        <div class="wz-footer">
+          <ul class="form-errors" role="alert"></ul>
+          <button type="submit" form="setup-form" class="primary large">Start test</button>
+          <p class="hint">The test opens on a white screen. Answer with the arrow keys; Esc stops it.</p>
+          <p class="hint touch-only">This test needs a physical keyboard; it cannot be answered by touch.</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="screen-test" class="screen screen-test" data-title="Test" hidden>
+      <div id="test-root"></div>
+      <video id="camera-video" playsinline muted hidden></video>
+    </section>
+
+    <section id="screen-result" class="screen" data-title="Result" hidden>
+      <div id="result-body"></div>
+      <div class="row center">
+        <button type="button" class="primary" data-nav="screen-setup">New test</button>
+        <button type="button" data-nav="screen-progress">Progress</button>
+      </div>
+    </section>
+
+    <!-- What the tests say about you: the advice for the newest test, and the chart. -->
+    <section id="screen-progress" class="screen" data-title="Progress" hidden>
+      <h1>Progress</h1>
+      <div class="progress-body"></div>
+    </section>
+
+    <section id="screen-log" class="screen" data-title="History" hidden>
+      <h1>History</h1>
+      <div class="row tools">
+        <button type="button" class="small" data-action="export-csv">Export CSV</button>
+        <button type="button" class="small" data-action="export-json">Export JSON</button>
+        <label class="file-button small">Import JSON<input type="file" accept="application/json,.json" data-action="import-json" class="sr-only"></label>
+      </div>
+      <p class="io-status" role="status"></p>
+      <table class="sessions">
+        <thead><tr><th>Started</th><th>Participant</th><th>Eye</th><th>Glasses</th><th>Result</th>
+          <th class="num">logMAR</th><th><span class="sr-only">Actions</span></th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </section>
+  </main>
+</body>
+</html>

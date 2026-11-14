@@ -1,0 +1,9 @@
+{
+  "name": "vision-check-camera-baseline",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "serve": "node serve.mjs"
+  }
+}
