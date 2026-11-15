@@ -171,6 +171,19 @@ button.link.danger:hover { color: var(--danger); }
 .facts dd[data-unit]::after { content: " " attr(data-unit); font-size: 0.8125rem; letter-spacing: 0; color: var(--muted); }
 .facts dd.sub { color: var(--muted); font-size: 0.875rem; }
 
+/* "Why this test": the NASA sources behind the app, folded under a summary */
+details.why { border-top: 1px solid var(--line); padding-top: 16px; text-align: left; }
+details.why > summary { cursor: pointer; color: var(--muted); font-size: 0.9375rem; list-style: none; width: fit-content; }
+details.why > summary::-webkit-details-marker { display: none; }
+details.why > summary::after { content: "+"; margin-left: 10px; color: var(--faint); }
+details.why[open] > summary::after { content: "−"; }
+details.why > summary:hover { color: var(--ink); }
+details.why p { color: var(--muted); max-width: 42em; margin: 14px 0 0; line-height: 1.6; }
+.why-sources { margin: 16px 0 0; padding-left: 20px; color: var(--faint); font-size: 0.8125rem; line-height: 1.5; }
+.why-sources a { color: var(--muted); text-underline-offset: 3px; }
+.why-sources a:hover { color: var(--ink); }
+.why-home { margin-top: 48px; }
+
 /* ---------- log ---------- */
 #screen-log .tools { margin: 20px 0 0; }
 .io-status { color: var(--muted); font-size: 0.8125rem; min-height: 1.4em; margin-top: 8px; }
@@ -279,6 +292,17 @@ body.testing main { max-width: none; padding: 0; }
 .test-msg { min-height: 1.5em; color: #b3261e; font-weight: 600; text-align: center; }
 canvas.optotype { display: block; }
 .test-help { color: #6b7078; font-size: 0.875rem; text-align: center; max-width: 520px; margin: 0; }
+/* Answer pad: a plain cross of four arrows, quiet grey on white so the sign stays the only thing to look at. */
+.test-pad { display: grid; grid-template-columns: repeat(3, 64px); grid-template-rows: repeat(2, 64px); gap: 8px; }
+.test-pad button, .test-stop { color: #2b3036; background: #fff; box-shadow: inset 0 0 0 1px #d6d8db; }
+.test-pad button { min-height: 0; padding: 0; border-radius: 16px; font-size: 1.5rem; }
+.test-pad button:hover, .test-stop:hover { background: #f3f4f5; box-shadow: inset 0 0 0 1px #b9bdc2; }
+.test-pad [data-answer=up] { grid-column: 2; grid-row: 1; }
+.test-pad [data-answer=left] { grid-column: 1; grid-row: 2; }
+.test-pad [data-answer=down] { grid-column: 2; grid-row: 2; }
+.test-pad [data-answer=right] { grid-column: 3; grid-row: 2; }
+.test-stop { min-height: 40px; padding: 8px 18px; font-size: 0.875rem; color: #6b7078; }
+.test-stage :focus-visible { outline-color: #2b3036; }
 
 /* ---------- result ---------- */
 .result { text-align: center; padding-top: 24px; }
@@ -356,15 +380,13 @@ input[type=checkbox] { width: 20px; height: 20px; accent-color: var(--ink); }
 .trend-chart rect[fill="#4a90d9"] { fill: var(--accent); }
 .trend-chart line[stroke="#4a90d9"] { stroke: var(--accent); }
 .action-message { font-weight: 300 !important; letter-spacing: -0.02em; }
-.action-message[data-state="within"] { color: var(--ok) !important; }
+.action-message[data-state="within"], .action-message[data-state="improved"] { color: var(--ok) !important; }
 .action-message[data-state="single"] { color: var(--warn) !important; }
 .action-message[data-state="persistent"] { color: var(--danger) !important; }
 .action-message[data-state="insufficient"], .action-message[data-state="not_measurable"] { color: var(--ink) !important; }
 
 /* ---------- touch and small screens ---------- */
-.touch-only { display: none; }
 @media (hover: none) and (pointer: coarse) {
-  .touch-only { display: block; color: var(--warn); }
   .kbd-hint { display: none; }
 }
 @media (max-width: 560px) {

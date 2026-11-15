@@ -64,6 +64,7 @@
           <dd class="sub"><button type="button" class="link" data-nav="screen-log">Open history</button></dd>
         </div>
       </dl>
+      <div class="why-home" data-role="why-home"></div>
       <p class="fine">Pilot prototype that monitors functional vision change.</p>
     </section>
 
@@ -136,9 +137,17 @@
                 <label><input type="radio" name="distanceMode" form="setup-form" value="camera"><span>Camera</span></label>
               </div>
               <div data-role="camera-embed"></div>
+              <fieldset class="field"><legend class="label">How far from the screen</legend>
+                <div class="seg">
+                  <label><input type="radio" name="distancePreset" value="400" checked><span>Near · 40 cm</span></label>
+                  <label><input type="radio" name="distancePreset" value="1000"><span>Far · 1 m</span></label>
+                  <label><input type="radio" name="distancePreset" value="custom"><span>Other</span></label>
+                </div>
+                <small data-role="distance-why"></small>
+              </fieldset>
               <label class="field">
                 <span class="label" data-role="distance-label">Distance to the screen, mm</span>
-                <input name="targetMm" form="setup-form" type="number" min="200" max="6000" step="1" value="1000" inputmode="numeric">
+                <input name="targetMm" form="setup-form" type="number" min="200" max="6000" step="1" value="400" inputmode="numeric">
                 <small data-role="floor-hint"></small>
               </label>
             </div>
@@ -148,8 +157,7 @@
         <div class="wz-footer">
           <ul class="form-errors" role="alert"></ul>
           <button type="submit" form="setup-form" class="primary large">Start test</button>
-          <p class="hint">The test opens on a white screen. Answer with the arrow keys; Esc stops it.</p>
-          <p class="hint touch-only">This test needs a physical keyboard; it cannot be answered by touch.</p>
+          <p class="hint">The test opens on a white screen. Answer with the arrow keys, or tap the arrows on the screen.</p>
         </div>
       </div>
     </section>

@@ -30,6 +30,20 @@ export function stepStatus(d) {
   };
 }
 
+export const NEAR_MM = 400;
+export const FAR_MM = 1000;
+const GOOD_NEAR_LOGMAR = -0.1; // good young eyes often reach this; the screen must draw it to give them a number
+
+/**
+ * Default test distance. Near vision is where a hyperopic shift shows, so 40 cm when this screen can draw
+ * logMAR -0.1 at 40 cm; otherwise 1 m, where good eyes still get a number instead of "Beyond screen".
+ * @param {(mm: number) => number|null} floorAt  smallest logMAR the screen can draw at a distance (null: none)
+ */
+export function suggestDistance(floorAt) {
+  const near = floorAt(NEAR_MM);
+  return near != null && near <= GOOD_NEAR_LOGMAR + 1e-9 ? NEAR_MM : FAR_MM;
+}
+
 /** The step to show: the one that was asked for, else the first that is not done, else the last. */
 export function firstOpenStep(status, requested = null) {
   if (STEPS.includes(requested)) return requested;
@@ -72,7 +86,7 @@ export function loadSetup(storage = globalThis.localStorage) {
     eye: EYES.includes(saved.eye) ? saved.eye : '',
     glasses: ['yes', 'no'].includes(saved.glasses) ? saved.glasses : '',
     condition: typeof saved.condition === 'string' && saved.condition ? saved.condition : '',
-    targetMm: Number.isInteger(saved.targetMm) ? saved.targetMm : 1000,
+    targetMm: Number.isInteger(saved.targetMm) ? saved.targetMm : 400,
     distanceMode: saved.distanceMode === 'camera' ? 'camera' : 'manual',
   };
 }

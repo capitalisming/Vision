@@ -22,7 +22,7 @@ test('(b) five sessions -> mean 0.10, threshold 0.10', () => {
   assert.equal(b.n, 5);
   assert.ok(Math.abs(b.mean - 0.1) < 1e-12);
   assert.ok(Math.abs(b.sd - Math.sqrt(0.0002)) < 1e-12); // sample sd, n - 1
-  assert.equal(b.threshold, 0.1); // 1.96 * sd * sqrt(1.2) = 0.030 < 0.10
+  assert.equal(b.threshold, 0.1); // t(4) 2.776 * sd * sqrt(1.2) = 0.043 < 0.10
 });
 
 test('(c) new session 0.16 -> within', () => {
@@ -36,9 +36,10 @@ test('(d) two in a row at 0.34 -> single, then persistent', () => {
   assert.equal(classify(mk(0.34), b, first), 'persistent');
 });
 
-test('opposite sides in a row are not persistent', () => {
+test('better than the band is an improvement, never a change to act on', () => {
   const b = computeBaseline(five);
-  assert.equal(classify(mk(-0.2), b, mk(0.34)), 'single');
+  assert.equal(classify(mk(-0.2), b, mk(0.34)), 'improved');
+  assert.equal(classify(mk(-0.2), b, mk(-0.2)), 'improved');
 });
 
 test('no baseline -> insufficient; no number or floorHit -> not_measurable', () => {

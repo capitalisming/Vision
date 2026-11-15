@@ -3,7 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --test test/*.test.js",
-    "serve": "node serve.mjs"
+    "test": "node --test \"test/*.test.js\" \"tests/*.test.mjs\"",
+    "serve": "node serve.mjs",
+    "test:pi": "python -m unittest discover -s pi"
   }
 }

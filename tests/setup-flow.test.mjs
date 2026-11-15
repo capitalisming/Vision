@@ -2,7 +2,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { installLocalStorage } from './helpers.mjs';
-import { STEPS, stepStatus, firstOpenStep, nextStep, stepSummary, loadSetup, saveSetup } from '../src/setup-flow.js';
+import { STEPS, stepStatus, firstOpenStep, nextStep, stepSummary, loadSetup, saveSetup, suggestDistance } from '../src/setup-flow.js';
 
 const ready = {
   participant: 'A', eye: 'OD', glasses: 'yes', condition: 'self_check',
@@ -66,5 +66,14 @@ test('the last setup is remembered and damaged data is ignored', () => {
   localStorage.setItem('last_setup', JSON.stringify({ participant: 'bad code!', eye: 'OD' }));
   assert.equal(loadSetup(), null);
   localStorage.setItem('last_setup', JSON.stringify({ participant: 'A', eye: 'XX', glasses: 'maybe', distanceMode: 'x' }));
-  assert.deepEqual(loadSetup(), { participant: 'A', eye: '', glasses: '', condition: '', targetMm: 1000, distanceMode: 'manual' });
+  assert.deepEqual(loadSetup(), { participant: 'A', eye: '', glasses: '', condition: '', targetMm: 400, distanceMode: 'manual' });
+});
+
+test('near (40 cm) is suggested only when the screen can show good near vision there', () => {
+  assert.equal(suggestDistance(() => -0.2), 400);
+  assert.equal(suggestDistance(() => -0.1), 400);
+  assert.equal(suggestDistance(() => 0.0), 1000);
+  assert.equal(suggestDistance(() => 0.4), 1000);
+  assert.equal(suggestDistance(() => null), 1000);
+  assert.equal(suggestDistance((mm) => (mm === 400 ? -0.1 : 0.5)), 400, 'only the 40 cm limit decides');
 });

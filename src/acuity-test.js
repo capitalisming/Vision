@@ -362,8 +362,15 @@ export async function runAcuityTest(options) {
     <div class="test-stage">
       <div class="test-msg" role="alert" aria-live="assertive"></div>
       <canvas class="optotype" aria-label="Landolt C"></canvas>
-      <p class="test-help">Press the arrow key that points to the gap in the ring.
-        Guess if unsure. Esc stops the test.</p>
+      <div class="test-pad" role="group" aria-label="Where is the gap in the ring?">
+        <button type="button" data-answer="up" aria-label="Gap at the top">↑</button>
+        <button type="button" data-answer="left" aria-label="Gap on the left">←</button>
+        <button type="button" data-answer="down" aria-label="Gap at the bottom">↓</button>
+        <button type="button" data-answer="right" aria-label="Gap on the right">→</button>
+      </div>
+      <p class="test-help">Tap the arrow, or press the arrow key, that points to the gap in the ring.
+        Guess if unsure.</p>
+      <button type="button" class="test-stop" data-answer="stop">Stop the test (Esc)</button>
     </div>`;
   const canvas = root.querySelector('canvas');
   const msg = root.querySelector('.test-msg');
@@ -376,38 +383,48 @@ export async function runAcuityTest(options) {
   const nextFrame = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
   const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
+  // One input path for keys, clicks and taps. An answer counts only while a sign is shown; a stop request
+  // is kept until the next sign, so Esc or Stop pressed in the pause between signs is never lost.
+  let pending = null; // { resolve, shownAt } while a sign is on screen
+  let stopRequested = false;
+  const answer = (response) => {
+    if (response === 'stop') {
+      stopRequested = true;
+      if (pending) { pending.resolve({ abort: true }); pending = null; }
+      return;
+    }
+    if (!pending) return;
+    pending.resolve({ response, rtMs: performance.now() - pending.shownAt });
+    pending = null;
+  };
+  const onKey = (e) => {
+    if (e.key === 'Escape') { e.preventDefault(); answer('stop'); return; }
+    const response = ARROW_TO_ORIENTATION[e.key];
+    if (!response) return;
+    e.preventDefault(); // the page must never scroll mid-test
+    if (!e.repeat) answer(response);
+  };
+  const onClick = (e) => {
+    const btn = e.target.closest('[data-answer]');
+    if (btn) answer(btn.dataset.answer);
+  };
+
   async function present(spec) {
+    if (stopRequested) return { abort: true };
     drawLandoltC(canvas, spec.sizeCssPx, spec.orientation);
     await nextFrame(); // stimulus is on screen before the clock starts
-    const shownAt = performance.now();
-    const answer = await new Promise((resolve) => {
-      const onKey = (e) => {
-        if (e.repeat) return;
-        if (e.key === 'Escape') {
-          e.preventDefault();
-          window.removeEventListener('keydown', onKey, true);
-          resolve({ abort: true });
-          return;
-        }
-        const response = ARROW_TO_ORIENTATION[e.key];
-        if (!response) return;
-        e.preventDefault();
-        window.removeEventListener('keydown', onKey, true);
-        resolve({ response, rtMs: performance.now() - shownAt });
-      };
-      window.addEventListener('keydown', onKey, true);
-    });
+    const result = stopRequested ? { abort: true }
+      : await new Promise((resolve) => { pending = { resolve, shownAt: performance.now() }; });
     blank();
-    if (!answer.abort) {
+    if (!result.abort) {
       msg.textContent = '';
       await wait(INTER_TRIAL_MS);
     }
-    return answer;
+    return result;
   }
 
-  // Swallow arrow keys between trials so the page never scrolls or navigates mid-test.
-  const swallow = (e) => { if (ARROW_TO_ORIENTATION[e.key]) e.preventDefault(); };
-  window.addEventListener('keydown', swallow);
+  window.addEventListener('keydown', onKey, true);
+  root.addEventListener('click', onClick);
   try {
     const result = await runProcedure({
       getDistance: options.getDistance,
@@ -419,6 +436,7 @@ export async function runAcuityTest(options) {
     });
     return buildSession(options, result, startedAt, dprAtStart);
   } finally {
-    window.removeEventListener('keydown', swallow);
+    window.removeEventListener('keydown', onKey, true);
+    root.removeEventListener('click', onClick);
   }
 }

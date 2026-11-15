@@ -8,10 +8,11 @@ import { paintIris } from './iris.js';
 import { initHomeScroll } from './home-scroll.js';
 import { connectPiCamera, normalizePiUrl } from './pi-camera.js';
 import { loadCameraSettings, saveCameraSettings, cameraId, describeCamera } from './camera-source.js';
-import { STEPS, stepStatus, firstOpenStep, nextStep, stepSummary, loadSetup, saveSetup } from './setup-flow.js';
+import { STEPS, stepStatus, firstOpenStep, nextStep, stepSummary, loadSetup, saveSetup, suggestDistance, NEAR_MM, FAR_MM } from './setup-flow.js';
 import { renderTrend } from './ui-trend.js';
 import { renderAction } from './ui-action.js';
 import { toBaselineSessions, latestAction } from './trend-data.js';
+import { whyThisTestElement } from './why-text.js';
 import { listSessions, saveSession, deleteSession, exportCsv, exportJson, importJson } from './storage.js';
 
 const state = {
@@ -24,6 +25,7 @@ const state = {
   cameraUi: null, // src/camera-screen.js, loaded when the camera step is first shown
   pendingStep: null, // step of the Test flow that a link asked for
   setupPrefilled: false,
+  distanceChosen: false, // the user (or the last test) picked the distance; stop suggesting one
 };
 
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -268,9 +270,41 @@ function updateFloorHint() {
   if (!p) { hint.textContent = 'Calibrate the screen first (step 2).'; return; }
   if (!(mm > 0)) { hint.textContent = ''; return; }
   const floor = screenFloorLogmar(mm, p);
-  hint.textContent = floor == null
-    ? 'At this distance even logMAR 1.3 cannot be drawn on this screen.'
-    : `This screen can show signs down to logMAR ${floor.toFixed(1)} at ${mm} mm. Finer than that is logged as "Beyond screen".`;
+  if (floor == null) {
+    hint.textContent = 'At this distance even logMAR 1.3 cannot be drawn on this screen.';
+  } else if (floor > 0) {
+    // Normal vision is logMAR 0.0: if the screen cannot draw it, good eyes only ever get "Beyond screen".
+    hint.textContent = `This screen can only show signs down to logMAR ${floor.toFixed(1)} at ${mm} mm, so good eyes will ` +
+      'read "Beyond screen" and get no number. Sit farther (Far · 1 m) or use a screen with more pixels.';
+  } else {
+    hint.textContent = `This screen can show signs down to logMAR ${floor.toFixed(1)} at ${mm} mm. Finer than that is logged as "Beyond screen".`;
+  }
+}
+
+/** Suggest 40 cm or 1 m for this screen (see suggestDistance) and say why, until the user picks a distance. */
+function suggestForScreen() {
+  const p = getPxPerMm();
+  const floorAt = (mm) => (p ? screenFloorLogmar(mm, p) : null);
+  const suggested = p ? suggestDistance(floorAt) : NEAR_MM;
+  if (!state.distanceChosen) {
+    $('[name=targetMm]').value = String(suggested);
+    syncDistancePreset();
+    updateFloorHint();
+  }
+  const near = floorAt(NEAR_MM);
+  $('[data-role=distance-why]').textContent = suggested === FAR_MM
+    ? (near == null
+      ? '1 m is suggested: at 40 cm this screen cannot draw the test signs.'
+      : `1 m is suggested: at 40 cm this screen can only show logMAR ${near.toFixed(1)}, so good near vision would read "Beyond screen". `
+        + 'Near vision matters because a hyperopic shift in space makes close-up vision worse (see Why this test on Home).')
+    : 'Near is suggested: a hyperopic shift in space makes close-up vision worse (see Why this test on Home).';
+}
+
+/** Keep the Near / Far / Other choice in step with the distance field. */
+function syncDistancePreset() {
+  const mm = $('[name=targetMm]').value;
+  const value = mm === '400' || mm === '1000' ? mm : 'custom';
+  wizard.querySelector(`[name=distancePreset][value="${value}"]`).checked = true;
 }
 
 /** Everything the three steps know, in the shape src/setup-flow.js expects. */
@@ -316,7 +350,7 @@ function openStep(step, { scroll = false } = {}) {
   openedStep = step;
   refreshWizard();
   if (step === 'screen') {
-    mountScreenCalibration($('[data-body=screen]'), { onSaved: () => { renderHome(); refreshWizard(); } });
+    mountScreenCalibration($('[data-body=screen]'), { onSaved: () => { renderHome(); suggestForScreen(); refreshWizard(); } });
   } else if (step === 'distance') {
     updateFloorHint();
     mountDistanceStep();
@@ -330,6 +364,7 @@ function prefillSetup() {
   for (const name of ['participant', 'condition', 'targetMm']) {
     if (saved[name] !== '') wizard.querySelector(`[name=${name}]`).value = saved[name];
   }
+  state.distanceChosen = true; // the last test's distance; keeps the baseline conditions the same
   for (const name of ['eye', 'glasses', 'distanceMode']) {
     const radio = saved[name] && wizard.querySelector(`[name=${name}][value=${saved[name]}]`);
     if (radio) radio.checked = true;
@@ -341,6 +376,8 @@ function enterSetup() {
     prefillSetup();
     state.setupPrefilled = true;
   }
+  suggestForScreen();
+  syncDistancePreset();
   $('.form-errors').textContent = '';
   openedStep = null;
   const requested = state.pendingStep;
@@ -362,12 +399,23 @@ wizard.addEventListener('click', (e) => {
 
 wizard.addEventListener('input', (e) => {
   $('.form-errors').textContent = ''; // old errors describe the previous submit
-  if (e.target.name === 'targetMm') updateFloorHint();
+  if (e.target.name === 'targetMm') {
+    state.distanceChosen = true;
+    updateFloorHint();
+    syncDistancePreset();
+  }
   refreshWizard();
 });
 
 wizard.addEventListener('change', (e) => {
   if (e.target.name === 'distanceMode' && openedStep === 'distance') mountDistanceStep();
+  if (e.target.name === 'distancePreset') state.distanceChosen = true;
+  if (e.target.name === 'distancePreset' && e.target.value !== 'custom') {
+    $('[name=targetMm]').value = e.target.value;
+    updateFloorHint();
+    refreshWizard();
+  }
+  if (e.target.name === 'distancePreset' && e.target.value === 'custom') $('[name=targetMm]').focus();
 });
 
 form.addEventListener('submit', async (e) => {
@@ -574,12 +622,11 @@ function enterProgress() {
   root.append(h('p', 'hint', `Latest test · ${latest.participant} · ${latest.eye} · ${new Date(latest.timestamp).toLocaleDateString()}`),
     action, trend);
   renderAction(action, { state: info.state, needed: info.needed });
-  // The "Why this test" text is still a placeholder from src/ui-action.js; do not show it to users yet.
-  action.querySelector('.action-why')?.remove();
   renderTrend(trend, toBaselineSessions(sessions));
   trend.querySelector(':scope > h2')?.remove();
   const legend = trend.querySelector('.trend-legend');
   if (legend) legend.textContent = 'The shaded band is your usual range. Red dots are outside it. A triangle is a test without a result.';
+  root.append(whyThisTestElement());
 }
 
 // ---------- result ----------
@@ -671,5 +718,6 @@ function renderScale(s) {
 // ---------- init ----------
 
 show('screen-home');
+$('[data-role=why-home]').append(whyThisTestElement());
 // Decorative iris on the home screen, drawn after the first paint so it never delays the page.
 setTimeout(() => { const canvas = $('.eye-canvas'); if (canvas) paintIris(canvas); }, 0);
