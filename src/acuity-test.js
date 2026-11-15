@@ -392,10 +392,14 @@ function validateOptions(o) {
  * headInput: { readDirection(): 'up'|'down'|'left'|'right'|null, resetNeutral(), gestureStarted(): boolean,
  * isNeutral(): boolean } (src/head-gesture.js createHeadInput) to also answer by turning the head. Arrows and
  * buttons work as before; how many answers came by head turn is written to the session notes.
+ * camera: { video: HTMLVideoElement, status?: () => string } shows the running camera small above the ring, with
+ * status() (what is wrong with the camera right now, '' when nothing) under it. The video is put back where it
+ * was when the test ends.
  */
 export async function runAcuityTest(options) {
   validateOptions(options);
   const headInput = options.headInput ?? null;
+  const camera = options.camera?.video ? options.camera : null;
   const startedAt = new Date().toISOString();
   // pxPerMm is only valid for the zoom level and monitor it was measured on.
   const dprAtStart = window.devicePixelRatio || 1;
@@ -405,6 +409,7 @@ export async function runAcuityTest(options) {
   const root = options.container;
   root.innerHTML = `
     <div class="test-stage">
+      ${camera ? '<div class="test-cam"><div class="test-cam-view"></div><p class="test-cam-status"></p></div>' : ''}
       <div class="test-msg" role="alert" aria-live="assertive"></div>
       <canvas class="optotype" aria-label="Landolt C"></canvas>
       <div class="test-pad" role="group" aria-label="Where is the gap in the ring?">
@@ -415,12 +420,31 @@ export async function runAcuityTest(options) {
       </div>
       <p class="test-help">${headInput
     ? 'Turn your head toward the gap in the ring (up, down, left or right), hold for a moment, then look '
-      + 'straight again. The arrows work too. Guess if unsure.'
+      + 'straight again. If you cannot, or the camera does not work, use the arrows. Guess if unsure.'
     : 'Tap the arrow, or press the arrow key, that points to the gap in the ring. Guess if unsure.'}</p>
       <button type="button" class="test-stop" data-answer="stop">Stop the test (Esc)</button>
     </div>`;
-  const canvas = root.querySelector('canvas');
+  const canvas = root.querySelector('canvas.optotype');
   const msg = root.querySelector('.test-msg');
+
+  // The camera above the ring: the same <video> the distance is read from, moved here for the test.
+  let cameraHome = null;
+  let cameraTimer = 0;
+  if (camera) {
+    const { video } = camera;
+    cameraHome = { parent: video.parentNode, next: video.nextSibling, hidden: video.hidden };
+    root.querySelector('.test-cam-view').append(video); // a move, not a removal: the stream keeps playing
+    video.hidden = false;
+    const statusEl = root.querySelector('.test-cam-status');
+    const showStatus = () => {
+      let text = '';
+      try { text = camera.status?.() ?? ''; } catch { text = ''; }
+      if (statusEl.textContent !== text) statusEl.textContent = text;
+      root.querySelector('.test-cam').classList.toggle('is-warn', Boolean(text));
+    };
+    showStatus();
+    cameraTimer = setInterval(showStatus, 250);
+  }
   const blank = () => {
     const ctx = canvas.getContext('2d');
     ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -523,6 +547,12 @@ export async function runAcuityTest(options) {
   } finally {
     if (headRaf) cancelAnimationFrame(headRaf);
     clearTimeout(flashTimer);
+    clearInterval(cameraTimer);
+    if (cameraHome) {
+      const { video } = camera;
+      if (cameraHome.parent) cameraHome.parent.insertBefore(video, cameraHome.next?.parentNode === cameraHome.parent ? cameraHome.next : null);
+      video.hidden = cameraHome.hidden;
+    }
     window.removeEventListener('keydown', onKey, true);
     root.removeEventListener('click', onClick);
   }

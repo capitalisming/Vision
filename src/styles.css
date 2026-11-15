@@ -435,3 +435,10 @@ input[type=checkbox] { width: 20px; height: 20px; accent-color: var(--ink); }
 }
 /* A head-turn answer lights its arrow for a moment (200 ms): a confirmation, not a distraction. */
 .test-pad button.is-confirm { background: #e8eaec; box-shadow: inset 0 0 0 2px #2b3036; }
+/* The camera above the ring during a camera-mode test: small, quiet, mirrored like a mirror. */
+.test-cam { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.test-cam-view { width: 160px; aspect-ratio: 4 / 3; border-radius: 14px; overflow: hidden; background: #000; box-shadow: inset 0 0 0 1px #d6d8db; }
+.test-cam-view video { display: block; width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
+.test-cam-status { margin: 0; min-height: 1.25em; font-size: 0.8125rem; color: #6b7078; text-align: center; max-width: 320px; }
+.test-cam.is-warn .test-cam-view { box-shadow: inset 0 0 0 2px #b26a00; }
+.test-cam.is-warn .test-cam-status { color: #8a5200; }

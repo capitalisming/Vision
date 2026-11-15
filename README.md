@@ -72,10 +72,14 @@ with a moving test pattern as the camera.
 
 During the test, answer with the arrow keys, or tap or click the arrows on screen. Esc or *Stop* ends the test.
 
-**Answer by turning the head** (camera mode only, a switch in step 3). Turn the head toward the gap (chin up,
-chin down, to your left, to your right), hold it for about 0.2 s, then look straight again; the arrow that was
-chosen lights up briefly. The arrows keep working. Before the first test with a camera, a short practice (head
-up, then to the left) finds which way each axis goes on that camera; a mirrored camera is handled by itself.
+**Answer by turning the head** (camera mode, on by default; a switch in step 3 turns it off). Turn the head
+toward the gap (chin up, chin down, to your left, to your right), hold it for about 0.2 s, then look straight
+again; the arrow that was chosen lights up briefly. During the test the camera is shown small above the ring;
+when it does not see the face it says so. **If you cannot turn your head, or the camera does not work, answer
+with the arrows**: they always work. The first time a camera sees a face in step 3, a short practice (head up,
+then to the left) starts by itself and finds which way each axis goes on that camera; a mirrored camera is
+handled by itself. It can be skipped: then the directions of the raw camera picture are used and the session
+notes say so.
 Only head turns are used, not eye movements: gaze cannot be read reliably from a webcam at 40 cm – 1 m, and
 looking away from the sign would break fixation. The distance is still confirmed when each sign is shown and
 checked until the head starts to move; from then to the end of that trial it is not (turning the head changes
