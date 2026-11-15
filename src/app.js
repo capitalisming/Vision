@@ -10,6 +10,7 @@ import { connectPiCamera, normalizePiUrl } from './pi-camera.js';
 import { loadCameraSettings, saveCameraSettings, cameraId, describeCamera } from './camera-source.js';
 import { STEPS, stepStatus, firstOpenStep, nextStep, stepSummary, loadSetup, saveSetup, suggestDistance, NEAR_MM, FAR_MM } from './setup-flow.js';
 import { renderTrend } from './ui-trend.js';
+import { createHeadInput, loadHeadSettings, signsFor } from './head-gesture.js';
 import { renderAction } from './ui-action.js';
 import { toBaselineSessions, latestAction } from './trend-data.js';
 import { whyThisTestElement } from './why-text.js';
@@ -454,6 +455,7 @@ async function loadDistanceModule() {
 async function startTest(v) {
   let getDistance;
   let cameraMod = null;
+  let headInput = null;
   if (v.distanceMode === 'manual') {
     const mm = v.targetMm;
     getDistance = () => ({ mm, ageMs: 0, ok: true, reason: '' });
@@ -467,9 +469,14 @@ async function startTest(v) {
       cameraMod.setParticipant(v.participant);
       await cameraMod.startDistance($('#camera-video'));
       getDistance = () => cameraMod.getDistance(v.participant);
+      // Answers by head turn: only in camera mode, when switched on and trained with this camera in step 3.
+      const head = loadHeadSettings();
+      const signs = head.enabled ? signsFor(head, cameraId(state.camera, location.origin)) : null;
+      if (signs) headInput = createHeadInput(cameraMod.getHeadLandmarks, signs);
     } catch (err) {
-      stopPiCamera();
-      showError(err.message); // Failure D: no camera data, no test, no number.
+      stopCamera();
+      const ui = await import('./camera-screen.js');
+      showError(ui.cameraErrorText(err)); // Failure D: no camera data, no test, no number.
       return;
     }
   }
@@ -483,19 +490,30 @@ async function startTest(v) {
       participant: v.participant, eye: v.eye, glasses: v.glasses, condition: v.condition,
       targetMm: v.targetMm, getDistance, pxPerMm: v.pxPerMm, container: $('#test-root'),
       distanceMode: v.distanceMode,
+      ...(headInput ? { headInput } : {}),
     });
   } catch (err) {
     state.testRunning = false;
     document.body.classList.remove('testing');
-    stopPiCamera();
+    stopCamera();
     show('screen-setup');
     showError(`The test could not run: ${err.message}`);
     return;
   }
   state.testRunning = false;
   document.body.classList.remove('testing');
-  stopPiCamera();
-  if (cameraMod) session.cam_k = cameraMod.getK(v.participant); // the calibration this distance was measured with
+  stopCamera();
+  if (cameraMod) {
+    session.cam_k = cameraMod.getK(v.participant); // the calibration this distance was measured with
+    const method = cameraMod.getCalibrationMethod(v.participant);
+    // The session columns are a fixed contract, so how the camera was calibrated goes into the notes.
+    if (method === 'auto' || method === 'auto_focal') {
+      session.notes = [session.notes, method === 'auto'
+        ? 'camera distance from automatic calibration (estimate, field of view assumed)'
+        : 'camera distance from automatic calibration (camera focal length measured with a tape)']
+        .filter(Boolean).join('; ');
+    }
+  }
 
   try {
     saveSession(session);
@@ -513,6 +531,12 @@ function stopPiCamera() {
   state.piCamera = null;
 }
 
+/** Let go of every camera: the distance tracking (webcam or Pi stream) and the Pi feed behind it. */
+function stopCamera() {
+  state.distance?.stopDistance();
+  stopPiCamera();
+}
+
 // How a Raspberry Pi stream gets into a <video>; handed to src/distance.js as its camera provider.
 async function piProvider(videoEl) {
   stopPiCamera();
@@ -524,11 +548,14 @@ async function piProvider(videoEl) {
 async function prepareCamera() {
   const mod = await loadDistanceModule();
   const id = cameraId(state.camera, location.origin); // throws for an invalid Pi address
-  mod.setCameraProvider(state.camera.source === 'pi' ? piProvider : null, id);
+  mod.setCameraProvider(state.camera.source === 'pi' ? piProvider : null, id, { deviceId: state.camera.deviceId ?? '' });
   return mod;
 }
 
-/** Show the camera in step 3 when the distance is measured by the camera. */
+/**
+ * Show the camera in step 3 when the distance is measured by the camera. Choosing Camera starts it, so the
+ * browser asks for permission right then; the calibration waits for a participant code if there is none yet.
+ */
 async function mountDistanceStep() {
   leaveDistanceStep();
   const token = cameraMountToken;
@@ -537,13 +564,8 @@ async function mountDistanceStep() {
     refreshWizard();
     return;
   }
-  const participant = readForm().participant;
-  if (!CODE_RE.test(participant)) {
-    embed.append(Object.assign(document.createElement('p'), {
-      className: 'hint', textContent: 'Fill in step 1 first: the camera calibration belongs to the participant code.',
-    }));
-    return;
-  }
+  const code = readForm().participant;
+  const participant = CODE_RE.test(code) ? code : '';
   let distance = null;
   let error = '';
   try {
@@ -560,11 +582,18 @@ async function mountDistanceStep() {
   } catch {
     label = 'Raspberry Pi (address needed)';
   }
+  let camId = '';
+  try {
+    camId = cameraId(state.camera, location.origin);
+  } catch {
+    // invalid Pi address: the head training waits for a camera that works
+  }
   ui.mountCameraStep(embed, {
-    distance, error, participant,
+    distance, error, participant, cameraId: camId,
     source: { settings: state.camera, label },
     onSourceChange: applyCameraSettings,
     onCalibrated: refreshWizard,
+    onCameraOff: stopPiCamera,
   });
   refreshWizard();
 }
@@ -573,7 +602,7 @@ async function mountDistanceStep() {
 function leaveDistanceStep() {
   cameraMountToken += 1;
   state.cameraUi?.unmountCameraStep($('[data-role=camera-embed]'));
-  stopPiCamera();
+  stopCamera();
 }
 
 /** The user picked another camera. Returns '' or a message to show next to the choice. */
@@ -667,7 +696,7 @@ function renderResult() {
     wrap.append(el('p', 'note',
       'Near the screen limit: the smallest signs were under 2 device pixels wide in the gap. Treat with caution.'));
   }
-  if (s.notes) wrap.append(el('p', 'note plain', `Reason: ${s.notes}`));
+  if (s.notes) wrap.append(el('p', 'note plain', `${s.outcome === 'ok' ? 'Note' : 'Reason'}: ${s.notes}`));
   if (score != null || s.outcome === 'worse_than_1.3') wrap.append(renderScale(s));
 
   const tech = el('details', 'tech');

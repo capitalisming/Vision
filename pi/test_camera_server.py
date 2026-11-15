@@ -2,9 +2,13 @@
 """Tests for pi/camera_server.py. No camera needed: run with  python -m unittest discover -s pi"""
 
 import json
+import shutil
+import ssl
 import struct
+import tempfile
 import threading
 import unittest
+from pathlib import Path
 import urllib.error
 import urllib.request
 
@@ -17,10 +21,10 @@ def _serve(buffer, **kwargs):
     return server, f'http://127.0.0.1:{server.server_address[1]}'
 
 
-def _get(url, method='GET', headers=None):
+def _get(url, method='GET', headers=None, context=None):
     req = urllib.request.Request(url, method=method, headers=headers or {})
     try:
-        with urllib.request.urlopen(req, timeout=5) as res:
+        with urllib.request.urlopen(req, timeout=5, context=context) as res:
             return res.status, dict(res.headers), res.read()
     except urllib.error.HTTPError as err:
         with err:
@@ -112,6 +116,45 @@ class CorsTest(unittest.TestCase):
 
     def test_app_files_can_be_switched_off(self):
         self.assertEqual(_get(self.base + '/index.html')[0], 404)
+
+
+@unittest.skipUnless(shutil.which('openssl'), 'openssl is needed to make a test certificate')
+class HttpsTest(unittest.TestCase):
+    """--https: an https page (GitHub Pages) can only load the camera from an https server."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        cert_dir = Path(self.tmp.name) / '.cert'
+        self.cert, key = cs.self_signed_certificate(cert_dir)
+        self.buffer = cs.FrameBuffer()
+        self.buffer.put(b'jpeg', 'image/jpeg')
+        self.server = cs.make_server(self.buffer, 'fake', (32, 24), host='127.0.0.1', port=0,
+                                     allow_origin='https://capitalisming.github.io',
+                                     ssl_context=cs.tls_context(self.cert, key))
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+        self.base = f'https://127.0.0.1:{self.server.server_address[1]}'
+
+    def tearDown(self):
+        self.server.shutdown()
+        self.server.server_close()
+        self.tmp.cleanup()
+
+    def test_frames_over_https_with_the_certificate_for_this_machine(self):
+        context = ssl.create_default_context(cafile=str(self.cert))  # trusts the cert, checks the IP in it
+        status, headers, body = _get(self.base + '/frame', context=context)
+        self.assertEqual((status, body), (200, b'jpeg'))
+        self.assertEqual(headers['Access-Control-Allow-Origin'], 'https://capitalisming.github.io')
+
+    def test_a_client_that_refuses_the_certificate_does_not_stop_the_server(self):
+        with self.assertRaises(Exception):
+            _get(self.base + '/health', context=ssl.create_default_context())  # untrusted: refused
+        context = ssl.create_default_context(cafile=str(self.cert))
+        self.assertEqual(_get(self.base + '/health', context=context)[0], 200)
+
+    def test_the_certificate_is_reused_and_its_key_never_served(self):
+        self.assertEqual(cs.self_signed_certificate(self.cert.parent)[0], self.cert)
+        context = ssl.create_default_context(cafile=str(self.cert))
+        self.assertEqual(_get(self.base + '/pi/.cert/key.pem', context=context)[0], 404)
 
 
 if __name__ == '__main__':

@@ -1,9 +1,13 @@
 // AI-assisted (Claude Code), reviewed by a team member.
-// The camera part of the Test flow: choose the camera, see the face with the eye markers, calibrate the
-// distance once. A guided replacement for the lab-style screen in src/camera-calib.js (which stays for
+// The camera part of the Test flow: ask for the camera, choose it, see the face with the eye markers, and
+// calibrate the distance automatically (or once with a tape, for a precise distance). A guided replacement for the lab-style screen in src/camera-calib.js (which stays for
 // dev.html). The Experiment 3 recorder is kept under "Study tools" and writes the same rows (same storage
 // key, same CSV).
 import { toCsv } from './camera-calib.js';
+import { isLowPowerDevice } from './distance.js';
+import {
+  headPose, createHeadTraining, loadHeadSettings, saveHeadSettings, signsFor, withSigns,
+} from './head-gesture.js';
 
 const ROWS_KEY = 'distance_check_rows';
 const DEFAULT_KNOWN_MM = 500;
@@ -15,20 +19,90 @@ const REASON_TEXT = {
   two_faces: 'More than one face in view.',
   head_turned: 'Turn your head toward the camera.',
   stale: 'Hold still for a moment…',
-  not_calibrated: 'Face found. Calibrate to see the distance.',
+  not_calibrated: 'Face found. Measuring…',
 };
+
+// Why an automatic calibration is still waiting, in plain words (reasons from autoCalibrateCamera).
+const AUTO_TEXT = {
+  collecting: 'Measuring the distance between your eyes. Hold still and look at the screen…',
+  hold_still: 'Hold your head still for a moment…',
+  no_iris: 'Your eyes are not clear enough. Add light in front of you and look at the camera.',
+  implausible: 'That measurement looked wrong. Look straight at the camera…',
+};
+
+// How the calibration was made (distance.getCalibrationMethod), in plain words.
+const METHOD_TEXT = {
+  tape: 'Calibrated with a tape for this camera.',
+  auto_focal: 'Calibrated automatically (this camera was measured with a tape before).',
+  auto: 'Calibrated automatically. The distance is an estimate and can be off by up to about 20%. '
+    + 'For a precise distance, check once with a tape below.',
+};
+
+// The head-turn practice in step 3 (createHeadTraining states and hints), in plain words.
+const HEAD_TRAINING_TEXT = {
+  up: 'Practice 1 of 2: look at the screen, then tilt your head up (chin up) and hold it for a moment.',
+  center: 'Good. Now look straight at the screen again.',
+  left: 'Practice 2 of 2: turn your head to your left and hold it for a moment.',
+};
+const HEAD_HINT_TEXT = {
+  no_face: 'No face found. Look at the screen.',
+  only_up_down: 'Move your head only up, not to the side.',
+  only_sideways: 'Turn your head only to the side, not up or down.',
+};
+
+/** What step 3 says about answers by head turn. */
+export function headStatusText({ enabled, trained, training = null, camera = true }) {
+  if (!enabled) return '';
+  if (!camera) return 'Head answers need the camera.';
+  if (training) {
+    if (training.hint) return HEAD_HINT_TEXT[training.hint] ?? training.hint;
+    return HEAD_TRAINING_TEXT[training.state] ?? '';
+  }
+  if (trained) {
+    return 'On: in the test, turn your head toward the gap in the ring and hold it for a moment. '
+      + 'The arrow keys and buttons still work.';
+  }
+  return 'Practise once with this camera before the test, so the app knows which way your head moves. '
+    + 'Until then the test uses the arrows.';
+}
 
 export function describeReason(reason) {
   return REASON_TEXT[reason] ?? String(reason);
 }
 
-/** A camera start-up error in plain words. */
-export function cameraErrorText(err) {
-  if (err?.name === 'NotAllowedError' || /permission denied/i.test(err?.message ?? '')) {
-    return 'The browser is blocking the camera. Allow it in the address bar, then reload.';
+/**
+ * A camera start-up error in plain words, with what to do about it.
+ * @param {Error} err  from getUserMedia, src/distance.js or src/pi-camera.js
+ * @param {{lowPower?: boolean}} [o]  lowPower: a Raspberry Pi or similar board, which gets Pi-specific hints
+ */
+export function cameraErrorText(err, { lowPower = isLowPowerDevice() } = {}) {
+  const name = err?.name ?? '';
+  const pi = (text) => (lowPower ? ` ${text}` : '');
+  if (name === 'NotAllowedError' || name === 'SecurityError' || /permission denied/i.test(err?.message ?? '')) {
+    return 'The browser is blocking the camera. Click the camera icon in the address bar (or the site settings), '
+      + 'allow the camera, then press Try again.';
   }
-  if (err?.name === 'NotFoundError') return 'No camera was found.';
-  if (err?.name === 'NotReadableError') return 'Another program is using the camera.';
+  if (name === 'NotFoundError' || name === 'DevicesNotFoundError') {
+    return 'No camera was found. Connect a camera and press Try again.'
+      + pi('On a Raspberry Pi a USB camera should appear by itself (check with: ls /dev/video*). The ribbon-cable '
+        + 'Camera Module is not visible to Chromium until it is set up for browsers (see pi/README.md); or choose '
+        + 'Raspberry Pi in the list and run pi/camera_server.py.');
+  }
+  if (name === 'OverconstrainedError') return 'The chosen camera is not available any more. Choose another camera in the list.';
+  if (name === 'NotReadableError' || name === 'TrackStartError' || name === 'AbortError') {
+    return 'Another program is using the camera, or it did not start. Close other programs that use it and press Try again.'
+      + pi('On a Raspberry Pi, pi/camera_server.py also holds the camera while it runs: stop it, or choose '
+        + 'Raspberry Pi in the list to use it.');
+  }
+  if (name === 'InsecureContextError') {
+    return `${err.message} This page is ${globalThis.location?.origin ?? 'not secure'}. Open the app over https `
+      + '(for example the GitHub Pages address) or on http://localhost, or choose Raspberry Pi in the list.';
+  }
+  if (name === 'NotSupportedError') return `${err.message} Use a current Chrome, Chromium, Edge, Firefox or Safari.`;
+  if (name === 'FaceTrackerError') {
+    return `${err.message}. The tape measure mode still works.`
+      + pi('On a Raspberry Pi, close other tabs to free memory and try again.');
+  }
   return err?.message || 'The camera could not be started.';
 }
 
@@ -73,10 +147,13 @@ function drawEyes(ctx, faces, ok) {
 }
 
 let generation = 0; // a newer mount, or an unmount, stops the loop of an older one
+let activeDistance = null; // the src/distance.js module the mounted step uses
 
 /** Remove the camera step and let go of the camera it was showing. */
 export function unmountCameraStep(container) {
   generation += 1;
+  activeDistance?.stopDistance?.();
+  activeDistance = null;
   container.querySelector('video')?.srcObject?.getTracks().forEach((track) => track.stop());
   container.textContent = '';
 }
@@ -86,52 +163,72 @@ export function unmountCameraStep(container) {
  * @param {object} o
  * @param {object|null} o.distance  the src/distance.js module, or null when it could not be prepared
  * @param {string} [o.error]  why the camera cannot start (shown instead of the picture)
- * @param {string} o.participant  the code the calibration belongs to
- * @param {{settings: {source: string, piUrl: string}, label: string}} o.source  the camera in use
- * @param {(next: {source: string, piUrl: string}) => string} o.onSourceChange  returns '' or a message
+ * @param {string} o.participant  the code the calibration belongs to ('' until step 1 is filled in)
+ * @param {{settings: {source: string, piUrl: string, deviceId?: string, deviceLabel?: string}, label: string}} o.source
+ *   the camera in use
+ * @param {(next: {source: string, piUrl: string, deviceId?: string, deviceLabel?: string}) => string} o.onSourceChange
+ *   called with another camera (or the same one, to try again); returns '' or a message
  * @param {(calibrated: boolean) => void} [o.onCalibrated]  called when the calibration state changes
+ * @param {() => void} [o.onCameraOff]  called when the user turns the camera off
+ * @param {string} [o.cameraId]  the camera in use (src/camera-source.js cameraId); head-turn practice is per camera
  */
-export function mountCameraStep(container, { distance, error = '', participant, source, onSourceChange, onCalibrated }) {
+export function mountCameraStep(container, {
+  distance, error = '', participant, source, onSourceChange, onCalibrated, onCameraOff, cameraId = '',
+}) {
   const gen = ++generation;
+  activeDistance = distance;
   container.innerHTML = `
     <div class="cam">
+      <div class="cam-pick">
+        <label class="field">
+          <span class="label">Camera</span>
+          <select name="cameraChoice"></select>
+        </label>
+        <button type="button" class="small" data-act="power">Turn camera off</button>
+      </div>
+      <label class="field pi-address" hidden>
+        <span class="label">Raspberry Pi address</span>
+        <input name="piUrl" autocomplete="off" inputmode="url" placeholder="raspberrypi.local:8000">
+        <small>Leave empty if you opened this page from the Pi. On an https page the Pi server must run with --https (see pi/README.md).</small>
+      </label>
+      <p class="hint cam-source-error" role="alert"></p>
+
       <div class="cam-view">
         <video muted playsinline></video>
         <canvas></canvas>
         <p class="cam-chip" role="status"></p>
         <p class="cam-dist"></p>
       </div>
-      <p class="cam-alert" role="alert" hidden></p>
-
-      <div class="cam-calib">
-        <p class="hint cam-howto"></p>
-        <div class="row">
-          <button type="button" class="primary" data-act="calibrate" disabled>Calibrate</button>
-          <span class="cam-calib-status" role="status"></span>
-        </div>
+      <div class="cam-alert" role="alert" hidden>
+        <p></p>
+        <button type="button" class="small" data-act="retry">Try again</button>
       </div>
 
-      <details class="more cam-source">
-        <summary>Camera source: <span data-role="source-label"></span></summary>
-        <div class="seg">
-          <label><input type="radio" name="cameraSource" value="local"><span>This computer</span></label>
-          <label><input type="radio" name="cameraSource" value="pi"><span>Raspberry Pi</span></label>
-        </div>
-        <label class="field pi-address">
-          <span class="label">Raspberry Pi address</span>
-          <input name="piUrl" autocomplete="off" inputmode="url" placeholder="raspberrypi.local:8000">
-          <small>Leave empty if you opened this page from the Pi.</small>
-        </label>
-        <p class="hint cam-source-error" role="alert"></p>
-        <p class="hint">Each camera has its own calibration.</p>
-      </details>
+      <div class="cam-calib">
+        <p class="cam-calib-status" role="status"></p>
+        <div class="cam-progress" hidden><span></span></div>
+        <div class="row"><button type="button" class="small" data-act="recalibrate" hidden>Calibrate again</button></div>
+        <details class="more cam-tape">
+          <summary>Check with a tape (more precise)</summary>
+          <p class="hint cam-howto"></p>
+          <label class="field">
+            <span class="label">Calibration distance, mm</span>
+            <input name="knownMm" type="number" min="100" max="2000" value="${DEFAULT_KNOWN_MM}">
+          </label>
+          <div class="row">
+            <button type="button" class="small" data-act="calibrate" disabled>Calibrate</button>
+          </div>
+        </details>
+      </div>
+
+      <div class="cam-head">
+        <label class="check"><input type="checkbox" name="headAnswers"> Answer by turning the head</label>
+        <p class="hint cam-head-status" role="status"></p>
+        <div class="row"><button type="button" class="small" data-act="head-train" hidden>Practise</button></div>
+      </div>
 
       <details class="more cam-study">
         <summary>Study tools</summary>
-        <div class="field">
-          <span class="label">Calibration distance, mm</span>
-          <input name="knownMm" type="number" min="100" max="2000" value="${DEFAULT_KNOWN_MM}">
-        </div>
         <h2>Camera vs tape (Experiment 3)</h2>
         <div class="row">
           <label class="field"><span class="label">Tape distance, mm</span><input name="tapeMm" type="number" min="100" max="2000"></label>
@@ -152,51 +249,118 @@ export function mountCameraStep(container, { distance, error = '', participant, 
 
   const q = (sel) => container.querySelector(sel);
   const input = (name) => q(`[name="${name}"]`);
+  const live = () => gen === generation && container.isConnected;
   const view = q('.cam-view');
   const video = q('video');
   const canvas = q('canvas');
   const ctx = canvas.getContext('2d');
   const chip = q('.cam-chip');
   const distText = q('.cam-dist');
-  const alertEl = q('.cam-alert');
+  const alertBox = q('.cam-alert');
+  const powerBtn = q('[data-act=power]');
   const calibrateBtn = q('[data-act=calibrate]');
+  const recalibrateBtn = q('[data-act=recalibrate]');
   const calibStatus = q('.cam-calib-status');
+  const progress = q('.cam-progress');
   const knownMm = () => Number(input('knownMm').value);
 
-  // ----- camera source (collapsed)
-  const sourceDetails = q('.cam-source');
-  q('[data-role=source-label]').textContent = source.label;
-  q(`[name=cameraSource][value=${source.settings.source}]`).checked = true;
-  input('piUrl').value = source.settings.piUrl;
-  sourceDetails.addEventListener('change', () => {
-    const next = { source: q('[name=cameraSource]:checked').value, piUrl: input('piUrl').value.trim() };
+  // ----- which camera: this computer's cameras by name, or a Raspberry Pi on the network
+  const select = input('cameraChoice');
+  const piField = q('.pi-address');
+  const settings = source.settings;
+  input('piUrl').value = settings.piUrl;
+  function fillChoices(cameras) {
+    const current = settings.source === 'pi' ? 'pi'
+      : `local:${settings.deviceId || distance?.activeDeviceId?.() || ''}`;
+    const options = cameras.map((c) => [`local:${c.deviceId}`, c.label]);
+    if (settings.source === 'local' && !options.some(([v]) => v === current)) {
+      options.unshift([current, settings.deviceLabel || (cameras.length ? 'Default camera' : 'This computer’s camera')]);
+    }
+    options.push(['pi', 'Raspberry Pi over the network']);
+    select.textContent = '';
+    for (const [value, label] of options) select.append(new Option(label, value, false, value === current));
+    piField.hidden = select.value !== 'pi';
+  }
+  fillChoices([]);
+  async function refreshChoices() {
+    let cameras = [];
+    try {
+      cameras = (await distance?.listCameras?.()) ?? [];
+    } catch {
+      // No list (old browser): the current choice and the Pi stay selectable.
+    }
+    if (live()) fillChoices(cameras);
+  }
+  const choose = () => {
+    const value = select.value;
+    piField.hidden = value !== 'pi';
+    const next = value === 'pi'
+      ? { source: 'pi', piUrl: input('piUrl').value.trim() }
+      : { source: 'local', piUrl: input('piUrl').value.trim(), deviceId: value.slice('local:'.length),
+        deviceLabel: select.selectedOptions[0]?.textContent ?? '' };
     q('.cam-source-error').textContent = onSourceChange(next);
-  });
+  };
+  select.addEventListener('change', choose);
+  input('piUrl').addEventListener('change', choose);
+  const onDeviceChange = () => { if (live()) refreshChoices(); else navigator.mediaDevices.removeEventListener('devicechange', onDeviceChange); };
+  navigator.mediaDevices?.addEventListener?.('devicechange', onDeviceChange);
 
-  // ----- camera
+  // ----- camera: started here, so the browser asks for permission as soon as Camera is chosen
+  let started = false;
   const showAlert = (text) => {
-    alertEl.textContent = text;
-    alertEl.hidden = !text;
+    alertBox.querySelector('p').textContent = text;
+    alertBox.hidden = !text;
     view.classList.toggle('is-off', Boolean(text));
   };
-  let started = false;
-  if (error || !distance) {
-    showAlert(error || 'The camera module could not be loaded.');
-    sourceDetails.open = true;
-  } else {
-    chip.textContent = 'Starting camera…';
+  q('[data-act=retry]').addEventListener('click', () => {
+    q('.cam-source-error').textContent = onSourceChange({ ...settings });
+  });
+  function start() {
+    showAlert('');
+    started = false;
+    view.classList.remove('is-paused');
+    powerBtn.hidden = false;
+    powerBtn.textContent = 'Turn camera off';
+    chip.className = 'cam-chip';
+    chip.textContent = settings.source === 'pi' ? 'Connecting to the Raspberry Pi…' : 'Allow the camera if the browser asks…';
     distance.setParticipant(participant);
-    distance.startDistance(video).then(() => { started = true; }).catch((err) => {
+    distance.startDistance(video).then(() => {
+      if (!live()) return;
+      started = true;
+      refreshChoices(); // camera names are known only after permission was given
+    }).catch((err) => {
+      if (!live()) return;
+      powerBtn.hidden = true; // "Try again" is the way back
       showAlert(cameraErrorText(err));
-      sourceDetails.open = true; // the way out may be another camera
+      refreshChoices(); // the way out may be another camera
     });
   }
+  function stop() {
+    started = false;
+    distance.stopDistance();
+    onCameraOff?.();
+    view.classList.add('is-paused');
+    chip.textContent = 'Camera is off.';
+    distText.textContent = '';
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    powerBtn.textContent = 'Turn camera on';
+  }
+  if (error || !distance) {
+    showAlert(error || 'The camera module could not be loaded.');
+    powerBtn.hidden = true;
+  } else {
+    start();
+  }
+  powerBtn.addEventListener('click', () => {
+    if (view.classList.contains('is-paused') || !alertBox.hidden) start(); else stop();
+  });
 
-  // ----- calibration
+  // ----- calibration: automatic from the eyes; a tape calibration is optional and more precise
   const syncHowto = () => {
     const cm = knownMm() / 10;
-    q('.cam-howto').textContent = `Calibrating for ${participant}. Sit so that your eyes are ${cm} cm from the screen. ` +
-      'Measure it with a tape or ruler. Look at the camera, then press Calibrate.';
+    q('.cam-howto').textContent = `Sit so that your eyes are ${cm} cm from the screen, measured with a tape or ruler. `
+      + 'Look at the camera, then press the button. This also measures the camera itself, so later automatic '
+      + 'calibrations with it are more precise.';
     calibrateBtn.textContent = `Calibrate at ${cm} cm`;
   };
   syncHowto();
@@ -206,23 +370,88 @@ export function mountCameraStep(container, { distance, error = '', participant, 
   calibrateBtn.addEventListener('click', () => {
     try {
       distance.calibrateCamera(participant, knownMm());
-      flash = { text: 'Calibrated.', until: Date.now() + 4000 };
+      flash = { text: `Calibrated with a tape at ${knownMm() / 10} cm.`, until: Date.now() + 4000 };
     } catch (err) {
       flash = { text: describeReason(err.message.replace(/^cannot calibrate: /, '')), until: Date.now() + 4000 };
     }
   });
+  recalibrateBtn.addEventListener('click', () => {
+    distance.clearCalibration(participant);
+    flash = { text: '', until: 0 };
+  });
+
+  // ----- answers by head turn: a switch, and a short practice that finds which way the head moves on this camera
+  const headBox = input('headAnswers');
+  const headStatus = q('.cam-head-status');
+  const headTrainBtn = q('[data-act=head-train]');
+  let headSettings = loadHeadSettings();
+  let training = null; // createHeadTraining() while practising
+  let trainingReport = null;
+  let headFlash = { text: '', until: 0 };
+  headBox.checked = headSettings.enabled;
+  headBox.disabled = !distance;
+  const startTraining = () => {
+    training = createHeadTraining();
+    trainingReport = { state: training.state, hint: '' };
+    headFlash = { text: '', until: 0 };
+  };
+  headBox.addEventListener('change', () => {
+    headSettings = { ...headSettings, enabled: headBox.checked };
+    saveHeadSettings(headSettings);
+    if (headBox.checked && !signsFor(headSettings, cameraId)) startTraining();
+    if (!headBox.checked) training = null;
+  });
+  headTrainBtn.addEventListener('click', startTraining);
+  function headTick(running) {
+    if (training && running) {
+      const lm = distance.getHeadLandmarks?.() ?? null;
+      trainingReport = training.update(headPose(lm), lm?.t ?? performance.now());
+      if (trainingReport.state === 'done') {
+        headSettings = withSigns(headSettings, cameraId, trainingReport.signs);
+        saveHeadSettings(headSettings);
+        training = null;
+        const flipped = trainingReport.signs.x === -1 || trainingReport.signs.y === -1;
+        headFlash = {
+          text: `Practice done. Head answers are on for this camera.${flipped
+            ? ' This camera shows the head the other way round; that is taken into account.' : ''}`,
+          until: Date.now() + 5000,
+        };
+      }
+    }
+    const trained = Boolean(signsFor(headSettings, cameraId));
+    const text = headFlash.until > Date.now() && headSettings.enabled ? headFlash.text
+      : headStatusText({ enabled: headSettings.enabled, trained, training: training && trainingReport, camera: running });
+    set(headStatus, 'textContent', text);
+    headTrainBtn.hidden = !headSettings.enabled || Boolean(training) || !running;
+    set(headTrainBtn, 'textContent', trained ? 'Practise again' : 'Practise');
+  }
 
   // ----- live view: one pass per frame, text only when it changes
   const set = (el, prop, value) => { if (el[prop] !== value) el[prop] = value; };
   let wasCalibrated = null;
+  let auto = null; // last answer of autoCalibrateCamera while not calibrated
   function tick() {
-    if (gen !== generation || !container.isConnected) return;
+    if (!live()) return;
     requestAnimationFrame(tick);
-    if (!started) return;
+    headTick(started);
+    if (!started) {
+      progress.hidden = true;
+      if (!distance || !alertBox.hidden || view.classList.contains('is-paused')) {
+        set(calibStatus, 'textContent', '');
+      }
+      return;
+    }
 
-    const d = distance.getDistance(participant);
+    const d = distance.getDistance(participant || null);
     const faceOk = d.reason === null || d.reason === 'not_calibrated';
-    const calibrated = Boolean(distance.getK(participant));
+    let calibrated = Boolean(participant && distance.getK(participant));
+    if (participant && !calibrated && faceOk) {
+      auto = distance.autoCalibrateCamera(participant);
+      if (auto.ok) {
+        calibrated = true;
+        flash = { text: `Calibrated automatically: ${Math.round(auto.eyeSpanMm)} mm between the outer eye corners.`, until: Date.now() + 4000 };
+      }
+    }
     if (calibrated !== wasCalibrated) {
       wasCalibrated = calibrated;
       onCalibrated?.(calibrated);
@@ -241,13 +470,20 @@ export function mountCameraStep(container, { distance, error = '', participant, 
     drawEyes(ctx, distance.getEyeCorners(), faceOk);
 
     let status;
+    let pct = null;
     if (flash.until > Date.now()) status = flash.text;
+    else if (!participant) status = 'Enter the participant code in step 1: the calibration belongs to it.';
+    else if (calibrated) status = METHOD_TEXT[distance.getCalibrationMethod(participant)] ?? METHOD_TEXT.tape;
     else if (!faceOk) status = describeReason(d.reason);
-    else if (calibrated) status = 'Calibrated with this camera.';
-    else status = 'Ready. Press Calibrate.';
+    else {
+      status = AUTO_TEXT[auto?.reason] ?? AUTO_TEXT.collecting;
+      pct = auto?.reason === 'collecting' ? Math.round(auto.progress * 100) : null;
+    }
     set(calibStatus, 'textContent', status);
-    calibrateBtn.disabled = !faceOk;
-    set(calibrateBtn, 'textContent', calibrated ? 'Recalibrate' : `Calibrate at ${knownMm() / 10} cm`);
+    progress.hidden = pct == null;
+    if (pct != null) progress.firstElementChild.style.width = `${pct}%`;
+    recalibrateBtn.hidden = !calibrated;
+    calibrateBtn.disabled = !faceOk || !participant;
   }
   requestAnimationFrame(tick);
 
@@ -273,6 +509,7 @@ export function mountCameraStep(container, { distance, error = '', participant, 
   q('[data-act=record]').addEventListener('click', () => {
     const tapeMm = Number(input('tapeMm').value);
     if (!(tapeMm > 0)) { recStatus.textContent = 'Enter the tape distance in mm.'; return; }
+    if (!distance || !participant) { recStatus.textContent = 'Not recorded: the camera or the participant code is missing.'; return; }
     const d = distance.getDistance(participant);
     if (!d.ok) { recStatus.textContent = `Not recorded: ${describeReason(d.reason)}`; return; }
     rows.push({

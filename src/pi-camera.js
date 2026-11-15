@@ -8,11 +8,13 @@ const MAX_FAILURES = 5; // consecutive failed requests before the status turns t
 /**
  * Base URL of the Pi camera server. Empty input means "this page came from the Pi" (same origin).
  * Accepts "raspberrypi.local:8000", "192.168.1.20:8000" or a full http(s) URL; keeps only the origin.
+ * Without a scheme it takes the page's: an https page (e.g. GitHub Pages) can only load an https camera.
  */
 export function normalizePiUrl(input, pageOrigin) {
   const text = String(input ?? '').trim();
   if (!text) return pageOrigin;
-  const withScheme = /^https?:\/\//i.test(text) ? text : `http://${text}`;
+  const scheme = /^https:/i.test(String(pageOrigin)) ? 'https' : 'http';
+  const withScheme = /^https?:\/\//i.test(text) ? text : `${scheme}://${text}`;
   let url;
   try {
     url = new URL(withScheme);
@@ -26,7 +28,9 @@ export function normalizePiUrl(input, pageOrigin) {
 export function blockedReason(base, pageUrl) {
   const page = new URL(pageUrl);
   if (page.protocol === 'https:' && base.startsWith('http:')) {
-    return 'This page is on https, so it cannot load an http camera. Open the app from the Pi instead: http://<pi-address>:8000';
+    return 'This page is on https, so it cannot load an http camera. Start the Pi server with https '
+      + '(python3 pi/camera_server.py --https, see pi/README.md) and enter https://<pi-address>:8000, '
+      + 'or open the app from the Pi instead: http://<pi-address>:8000';
   }
   return '';
 }
@@ -80,9 +84,17 @@ export async function connectPiCamera(videoEl, base, { fps = 15, timeoutMs = 200
     await fetchFrame(); // fail fast with a clear message if the Pi is not reachable
   } catch (err) {
     const why = err.name === 'AbortError' ? 'no answer within 2 s' : err.message;
-    // A blocked cross-origin read and a dead address look the same to the page ("Failed to fetch").
-    const hint = base === location.origin ? ''
-      : ` Check that pi/camera_server.py is running there and was started with --allow-origin ${location.origin}.`;
+    // A blocked cross-origin read, an untrusted certificate and a dead address all look the same to the
+    // page ("Failed to fetch").
+    let hint = '';
+    if (base === location.origin) {
+      if (/ 404$/.test(why)) hint = ' This page did not come from a Pi: enter the Pi address.';
+    } else {
+      hint = ` Check that pi/camera_server.py is running there and was started with --allow-origin ${location.origin}.`;
+      if (base.startsWith('https:')) {
+        hint += ` With a self-signed certificate, open ${base}/health once in this browser and accept the warning.`;
+      }
+    }
     throw new Error(`Cannot reach the Pi camera at ${base}: ${why}.${hint}`);
   }
 

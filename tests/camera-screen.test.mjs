@@ -25,3 +25,17 @@ test('error percent is relative to the tape distance', () => {
   assert.equal(errorPercent({ cameraMm: 550, tapeMm: 500 }), 10);
   assert.equal(errorPercent({ cameraMm: 450, tapeMm: 500 }), -10);
 });
+
+test('head answers in step 3: off says nothing, practice steps and hints have plain words', async () => {
+  const { headStatusText } = await import('../src/camera-screen.js');
+  assert.equal(headStatusText({ enabled: false, trained: true }), '');
+  assert.match(headStatusText({ enabled: true, trained: false }), /Practise once/);
+  assert.match(headStatusText({ enabled: true, trained: true }), /arrow keys and buttons still work/);
+  assert.match(headStatusText({ enabled: true, trained: true, camera: false }), /need the camera/);
+  for (const state of ['up', 'center', 'left']) {
+    assert.match(headStatusText({ enabled: true, trained: false, training: { state, hint: '' } }), /^[A-Z].*\.$/);
+  }
+  for (const hint of ['no_face', 'only_up_down', 'only_sideways']) {
+    assert.ok(!headStatusText({ enabled: true, trained: false, training: { state: 'up', hint } }).includes('_'));
+  }
+});

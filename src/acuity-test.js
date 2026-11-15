@@ -17,6 +17,12 @@ export const MAX_DISTANCE_AGE_MS = 1000;     // older readings count as "no read
 export const INVALID_PAUSE_MS = 1000;        // pause after a trial that could not be shown
 export const INTER_TRIAL_MS = 250;
 export const MONITOR_INTERVAL_MS = 100;
+// Answers by head turn: before the next sign, wait (not counted as a trial) until the head is back in the start
+// position and the distance can be read again; after this long the next trial runs and is checked as usual.
+export const HEAD_READY_POLL_MS = 100;
+export const HEAD_READY_TIMEOUT_MS = 5000;
+export const HEAD_READY_HINT_MS = 1500; // a quiet hint only when it takes longer than this
+const HEAD_FLASH_MS = 200;
 
 const ARROW_TO_ORIENTATION = {
   ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right',
@@ -81,6 +87,10 @@ export function readDistance(getDistance) {
  * @param {(ms:number) => Promise<void>} [deps.wait]
  * @param {() => number} [deps.random]
  * @param {() => string} [deps.displayCheck]  non-empty reason when sign sizes can no longer be trusted
+ * @param {{resetNeutral: () => void, gestureStarted: () => boolean, isNeutral: () => boolean}} [deps.head]
+ *   answers by head turn. The distance is checked when the sign is shown and until the head starts to move;
+ *   from then on to the end of that trial it is not (turning the head is what changes the eye span). Before the
+ *   next sign the procedure waits for the head to come back and the distance to be valid again.
  * @returns {Promise<{outcome:string, logmar:number|null, lStart:number|null, nCorrect:number,
  *           nTrials:number, floorHit:boolean, nearFloor:boolean, reason:string, trials:object[]}>}
  */
@@ -89,6 +99,7 @@ export async function runProcedure(deps) {
   const notify = deps.notify ?? (() => {});
   const wait = deps.wait ?? ((ms) => new Promise((r) => setTimeout(r, ms)));
   const pick = makeOrientationPicker(deps.random);
+  const head = deps.head ?? null;
 
   const trials = [];
   let consecutiveInvalid = 0;
@@ -139,9 +150,15 @@ export async function runProcedure(deps) {
     }
 
     const orientation = pick();
+    head?.resetNeutral(); // the start position of this sign, taken while the distance is confirmed
     let midTrialProblem = '';
+    let headMoved = false; // once true, the distance is not read again in this trial
+    const gestureStarted = () => {
+      if (!headMoved && head?.gestureStarted()) headMoved = true;
+      return headMoved;
+    };
     const monitor = setInterval(() => {
-      if (midTrialProblem) return;
+      if (midTrialProblem || gestureStarted()) return;
       const d = readDistance(getDistance);
       if (!d.ok) midTrialProblem = d.reason;
       else if (Math.abs(d.mm - d0.mm) / d0.mm > MAX_DISTANCE_CHANGE) {
@@ -156,29 +173,53 @@ export async function runProcedure(deps) {
     }
     if (ans && ans.abort) return { abort: true };
 
-    const d1 = readDistance(getDistance);
+    const moved = gestureStarted(); // asked even when the trial already failed: the wait below depends on it
     let problem = midTrialProblem;
-    if (!problem && !d1.ok) problem = d1.reason;
-    if (!problem && Math.abs(d1.mm - d0.mm) / d0.mm > MAX_DISTANCE_CHANGE) {
-      problem = 'distance changed by more than 10% during the trial';
+    if (!problem && !moved) {
+      const d1 = readDistance(getDistance);
+      if (!d1.ok) problem = d1.reason;
+      else if (Math.abs(d1.mm - d0.mm) / d0.mm > MAX_DISTANCE_CHANGE) {
+        problem = 'distance changed by more than 10% during the trial';
+      }
     }
     const extra = {
       orientation, response: ans.response, rtMs: ans.rtMs,
       distanceMm: d0.mm, sizeCssPx: sz.sizeCssPx, gapDevicePx: sz.gapDevicePx,
     };
+    let outcome;
     if (problem) {
-      return { valid: false, reason: recordInvalid(phase, tenths, problem, extra) };
+      outcome = { valid: false, reason: recordInvalid(phase, tenths, problem, extra) };
+    } else {
+      const correct = ans.response === orientation;
+      trials.push({
+        trial_index: trials.length + 1, phase, logmar, orientation, response: ans.response,
+        correct, valid: true, distance_mm: round(d0.mm, 1), size_css_px: round(sz.sizeCssPx, 3),
+        gap_device_px: round(sz.gapDevicePx, 3), rt_ms: round(ans.rtMs, 1),
+      });
+      consecutiveInvalid = 0;
+      lastGoodMm = d0.mm;
+      outcome = { valid: true, correct };
     }
+    if (moved) await waitHeadReady();
+    return outcome;
+  }
 
-    const correct = ans.response === orientation;
-    trials.push({
-      trial_index: trials.length + 1, phase, logmar, orientation, response: ans.response,
-      correct, valid: true, distance_mm: round(d0.mm, 1), size_css_px: round(sz.sizeCssPx, 3),
-      gap_device_px: round(sz.gapDevicePx, 3), rt_ms: round(ans.rtMs, 1),
-    });
-    consecutiveInvalid = 0;
-    lastGoodMm = d0.mm;
-    return { valid: true, correct };
+  // After a head answer: wait until the head is back and the distance valid. Not a trial, so not counted as one.
+  async function waitHeadReady() {
+    const polls = Math.ceil(HEAD_READY_TIMEOUT_MS / HEAD_READY_POLL_MS);
+    let hinted = false;
+    for (let i = 0; i < polls; i++) {
+      if (head.isNeutral() && readDistance(getDistance).ok) {
+        if (hinted) notify('');
+        return;
+      }
+      if (!hinted && (i + 1) * HEAD_READY_POLL_MS >= HEAD_READY_HINT_MS) {
+        hinted = true;
+        notify('Look straight at the screen again.');
+      }
+      await wait(HEAD_READY_POLL_MS);
+    }
+    // Still not back: the next trial checks the distance as usual and is not counted if it is not valid.
   }
 
   // Repeats until one counted trial, or a stop condition.
@@ -347,10 +388,14 @@ function validateOptions(o) {
 /**
  * Run the test in `container` and resolve with a Session (contract schema + `trials`).
  * Options per contract: { participant, eye, glasses, condition, targetMm, getDistance, pxPerMm, container }
- * plus distanceMode: 'manual' | 'camera' (written to Session.distance_mode).
+ * plus distanceMode: 'manual' | 'camera' (written to Session.distance_mode), and optionally
+ * headInput: { readDirection(): 'up'|'down'|'left'|'right'|null, resetNeutral(), gestureStarted(): boolean,
+ * isNeutral(): boolean } (src/head-gesture.js createHeadInput) to also answer by turning the head. Arrows and
+ * buttons work as before; how many answers came by head turn is written to the session notes.
  */
 export async function runAcuityTest(options) {
   validateOptions(options);
+  const headInput = options.headInput ?? null;
   const startedAt = new Date().toISOString();
   // pxPerMm is only valid for the zoom level and monitor it was measured on.
   const dprAtStart = window.devicePixelRatio || 1;
@@ -368,8 +413,10 @@ export async function runAcuityTest(options) {
         <button type="button" data-answer="down" aria-label="Gap at the bottom">↓</button>
         <button type="button" data-answer="right" aria-label="Gap on the right">→</button>
       </div>
-      <p class="test-help">Tap the arrow, or press the arrow key, that points to the gap in the ring.
-        Guess if unsure.</p>
+      <p class="test-help">${headInput
+    ? 'Turn your head toward the gap in the ring (up, down, left or right), hold for a moment, then look '
+      + 'straight again. The arrows work too. Guess if unsure.'
+    : 'Tap the arrow, or press the arrow key, that points to the gap in the ring. Guess if unsure.'}</p>
       <button type="button" class="test-stop" data-answer="stop">Stop the test (Esc)</button>
     </div>`;
   const canvas = root.querySelector('canvas');
@@ -387,15 +434,42 @@ export async function runAcuityTest(options) {
   // is kept until the next sign, so Esc or Stop pressed in the pause between signs is never lost.
   let pending = null; // { resolve, shownAt } while a sign is on screen
   let stopRequested = false;
-  const answer = (response) => {
+  let answers = 0;
+  let headAnswers = 0;
+  const answer = (response, via = 'key') => {
     if (response === 'stop') {
       stopRequested = true;
       if (pending) { pending.resolve({ abort: true }); pending = null; }
       return;
     }
     if (!pending) return;
+    answers += 1;
+    if (via === 'head') headAnswers += 1;
     pending.resolve({ response, rtMs: performance.now() - pending.shownAt });
     pending = null;
+  };
+
+  // Head answers: polled once per frame while a sign is shown; the arrow it chose lights up briefly.
+  let headRaf = 0;
+  let flashTimer = 0;
+  const confirmArrow = (direction) => {
+    const btn = root.querySelector(`.test-pad [data-answer=${direction}]`);
+    if (!btn) return;
+    clearTimeout(flashTimer);
+    root.querySelectorAll('.test-pad .is-confirm').forEach((b) => b.classList.remove('is-confirm'));
+    btn.classList.add('is-confirm');
+    flashTimer = setTimeout(() => btn.classList.remove('is-confirm'), HEAD_FLASH_MS);
+  };
+  const pollHead = () => {
+    headRaf = 0;
+    if (!pending) return;
+    const direction = headInput.readDirection();
+    if (direction) {
+      confirmArrow(direction);
+      answer(direction, 'head');
+      return;
+    }
+    headRaf = requestAnimationFrame(pollHead);
   };
   const onKey = (e) => {
     if (e.key === 'Escape') { e.preventDefault(); answer('stop'); return; }
@@ -414,7 +488,11 @@ export async function runAcuityTest(options) {
     drawLandoltC(canvas, spec.sizeCssPx, spec.orientation);
     await nextFrame(); // stimulus is on screen before the clock starts
     const result = stopRequested ? { abort: true }
-      : await new Promise((resolve) => { pending = { resolve, shownAt: performance.now() }; });
+      : await new Promise((resolve) => {
+        pending = { resolve, shownAt: performance.now() };
+        if (headInput) pollHead();
+      });
+    if (headRaf) { cancelAnimationFrame(headRaf); headRaf = 0; }
     blank();
     if (!result.abort) {
       msg.textContent = '';
@@ -433,9 +511,18 @@ export async function runAcuityTest(options) {
       notify: (text) => { msg.textContent = text; },
       wait,
       displayCheck,
+      head: headInput,
     });
-    return buildSession(options, result, startedAt, dprAtStart);
+    const session = buildSession(options, result, startedAt, dprAtStart);
+    if (headInput) {
+      // The session columns are a fixed contract, so the answer method goes into the notes.
+      session.notes = [session.notes, `head-turn answers on (${headAnswers} of ${answers} answers given by head turn)`]
+        .filter(Boolean).join('; ');
+    }
+    return session;
   } finally {
+    if (headRaf) cancelAnimationFrame(headRaf);
+    clearTimeout(flashTimer);
     window.removeEventListener('keydown', onKey, true);
     root.removeEventListener('click', onClick);
   }

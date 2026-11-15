@@ -10,11 +10,16 @@ Only the newest frame is kept, in memory. Nothing is written to disk and nothing
 
     python3 pi/camera_server.py                 # Pi Camera Module (picamera2), else a USB camera (OpenCV)
     python3 pi/camera_server.py --source fake   # moving test pattern, no camera or extra packages needed
+    python3 pi/camera_server.py --https --allow-origin https://capitalisming.github.io
+                                                # https, so the GitHub Pages app (https) may load the frames
 """
 
 import argparse
 import json
+import socket
+import ssl
 import struct
+import subprocess
 import threading
 import time
 from functools import partial
@@ -25,6 +30,8 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+# Where --https keeps its self-signed certificate. A dot directory: the static file handler never serves it.
+CERT_DIR = Path(__file__).resolve().parent / '.cert'
 
 
 class FrameBuffer:
@@ -281,14 +288,75 @@ class Handler(SimpleHTTPRequestHandler):
             super().log_message(fmt, *args)
 
 
+class TLSHTTPServer(ThreadingHTTPServer):
+    """ThreadingHTTPServer over TLS. The handshake runs in the request thread, so one slow or refusing client
+    (for example a browser that does not trust the certificate yet) never blocks the others."""
+
+    ssl_context = None
+
+    def get_request(self):
+        sock, addr = self.socket.accept()
+        return self.ssl_context.wrap_socket(sock, server_side=True, do_handshake_on_connect=False), addr
+
+    def finish_request(self, request, client_address):
+        try:
+            request.do_handshake()
+        except (ssl.SSLError, OSError):
+            return  # the client gave up, e.g. on a certificate warning; nothing to answer
+        super().finish_request(request, client_address)
+
+
+def local_addresses():
+    """Names and IPs this machine is reached by on the local network, for the certificate."""
+    names = {'localhost', socket.gethostname(), socket.gethostname() + '.local'}
+    ips = {'127.0.0.1'}
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.connect(('192.0.2.1', 9))  # no packet is sent; this only picks the outgoing interface
+            ips.add(s.getsockname()[0])
+    except OSError:
+        pass
+    return sorted(names), sorted(ips)
+
+
+def self_signed_certificate(cert_dir=CERT_DIR):
+    """(cert, key) paths of a self-signed certificate for this machine, made with openssl on first use."""
+    cert, key = cert_dir / 'cert.pem', cert_dir / 'key.pem'
+    if cert.exists() and key.exists():
+        return cert, key
+    cert_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+    names, ips = local_addresses()
+    san = ','.join([f'DNS:{n}' for n in names] + [f'IP:{ip}' for ip in ips])
+    try:
+        subprocess.run(['openssl', 'req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-days', '825',
+                        '-keyout', str(key), '-out', str(cert), '-subj', '/CN=Vision Pi camera',
+                        '-addext', f'subjectAltName={san}'], check=True, capture_output=True)
+    except FileNotFoundError:
+        raise RuntimeError('openssl is not installed (sudo apt install openssl), or pass --cert and --key')
+    except subprocess.CalledProcessError as err:
+        raise RuntimeError('openssl could not make a certificate: ' + err.stderr.decode(errors='replace').strip())
+    key.chmod(0o600)
+    return cert, key
+
+
+def tls_context(cert, key):
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    context.load_cert_chain(str(cert), str(key))
+    return context
+
+
 def make_server(buffer, source_name, frame_size, host='0.0.0.0', port=8000, root=REPO_ROOT,
-                allow_origin=None, serve_app=True):
-    """HTTP server bound to (host, port). Port 0 picks a free port (used by the tests)."""
+                allow_origin=None, serve_app=True, ssl_context=None):
+    """HTTP (or, with ssl_context, HTTPS) server bound to (host, port). Port 0 picks a free port (tests)."""
     handler = type('VisionHandler', (Handler,), {
         'buffer': buffer, 'source_name': source_name, 'frame_size': frame_size,
         'allow_origin': allow_origin, 'serve_app': serve_app,
     })
-    return ThreadingHTTPServer((host, port), partial(handler, directory=str(root)))
+    if ssl_context is None:
+        return ThreadingHTTPServer((host, port), partial(handler, directory=str(root)))
+    server = TLSHTTPServer((host, port), partial(handler, directory=str(root)))
+    server.ssl_context = ssl_context
+    return server
 
 
 def main():
@@ -303,15 +371,33 @@ def main():
     parser.add_argument('--allow-origin', default=None,
                         help='let a page from this origin read frames, e.g. http://localhost:5178 (off by default)')
     parser.add_argument('--no-app', action='store_true', help='serve only /frame and /health, not the app files')
+    parser.add_argument('--https', action='store_true',
+                        help='serve over https (needed by an https page such as GitHub Pages); makes a self-signed '
+                             'certificate with openssl unless --cert and --key are given')
+    parser.add_argument('--cert', type=Path, help='certificate file (PEM) for --https')
+    parser.add_argument('--key', type=Path, help='private key file (PEM) for --https')
     args = parser.parse_args()
+    if (args.cert is None) != (args.key is None):
+        parser.error('--cert and --key go together')
+    use_tls = args.https or args.cert is not None
+
+    context = None
+    if use_tls:
+        cert, key = (args.cert, args.key) if args.cert else self_signed_certificate()
+        context = tls_context(cert, key)
 
     buffer = FrameBuffer()
     source = open_source(args.source, args.width, args.height, args.fps, args.device)
     source.start(buffer)
     server = make_server(buffer, source.name, source.size, args.host, args.port,
-                         allow_origin=args.allow_origin, serve_app=not args.no_app)
+                         allow_origin=args.allow_origin, serve_app=not args.no_app, ssl_context=context)
+    scheme = 'https' if use_tls else 'http'
     print(f'Camera: {source.name} {source.size[0]}x{source.size[1]} @ {args.fps} fps')
-    print(f'Open http://<this-pi-address>:{args.port}/ on the laptop (frames at /frame, status at /health)')
+    print(f'Open {scheme}://<this-pi-address>:{args.port}/ on the laptop (frames at /frame, status at /health)')
+    if use_tls and not args.cert:
+        names, ips = local_addresses()
+        print('Self-signed certificate: open ' + f'https://{ips[-1]}:{args.port}/health'
+              + ' once in each browser and accept the warning, then the app can load the camera.')
     try:
         server.serve_forever()
     except KeyboardInterrupt:
