@@ -352,7 +352,18 @@ dl.kv dt:last-of-type, dl.kv dd:last-of-type { border-bottom: 0; }
 .cam-chip.is-ok { color: var(--ok); }
 .cam-chip.is-warn { color: var(--warn); }
 .cam-dist { position: absolute; right: 20px; bottom: 12px; margin: 0; font-size: clamp(2rem, 7vw, 3.25rem); font-weight: 200; letter-spacing: -0.04em; text-shadow: 0 1px 14px rgb(0 0 0 / 0.8); }
-.cam-alert { margin: 0; padding: 14px 16px; border-radius: 14px; color: var(--danger); background: rgb(255 107 94 / 0.12); }
+.cam-alert { display: grid; gap: 12px; justify-items: start; margin: 0; padding: 14px 16px; border-radius: 14px; color: var(--danger); background: rgb(255 107 94 / 0.12); }
+.cam-pick { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; }
+.cam-pick .field { flex: 1 1 240px; }
+.cam select {
+  font: inherit; color: var(--ink); width: 100%; min-height: 50px; padding: 10px 16px;
+  border: 0; border-radius: 14px; background: var(--field); box-shadow: inset 0 0 0 1px var(--line-2);
+}
+.cam select:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(--accent); }
+/* Camera turned off by the user: the frame stays, black, with the chip saying so. */
+.cam-view.is-paused video, .cam-view.is-paused canvas, .cam-view.is-paused .cam-dist { display: none; }
+.cam-progress { height: 4px; border-radius: 2px; background: var(--line); overflow: hidden; }
+.cam-progress span { display: block; height: 100%; width: 0; background: var(--accent); transition: width 160ms linear; }
 .cam-view.is-off { display: none; }
 .cam-calib { display: grid; gap: 16px; }
 .cam-calib h2 { margin: 0; }
@@ -360,7 +371,6 @@ dl.kv dt:last-of-type, dl.kv dd:last-of-type { border-bottom: 0; }
 .cam-calib-status { color: var(--muted); font-size: 0.875rem; }
 .cam-source-error { color: var(--danger); }
 .cam-source-error:empty { display: none; }
-.cam-source:not(:has([name=cameraSource][value=pi]:checked)) .pi-address { display: none; }
 .cam .more { gap: 16px; }
 .cam-study h2 { font-size: 1.0625rem; font-weight: 400; color: var(--muted); }
 .cam-study input:not([type=checkbox]) { width: 11em; }
