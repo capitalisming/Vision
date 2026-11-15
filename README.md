@@ -27,10 +27,18 @@ not measure diopters.
 On ordinary laptop screens, 40 cm is past the pixel limit for normal vision; on one 96 px/inch test screen the
 limit there was logMAR 0.4. That is why the default depends on the screen.
 
+## Browsers
+
+The app needs a browser with ES2020 and `Array.prototype.at`: Chrome / Chromium / Edge 92+, Firefox 90+,
+Safari 15.4+. On a Raspberry Pi 4 that means Raspberry Pi OS Bookworm or Trixie with its Chromium (check the
+version at `chrome://version`; update with `sudo apt update && sudo apt full-upgrade`). The camera needs an
+`https://` page or `http://localhost`.
+
 ## Run it
 
-Live version: https://capitalisming.github.io/Vision/ (GitHub Pages, published from `main`). The Raspberry Pi
-camera needs the app opened over `http` from the Pi, so it does not work from this `https` page.
+Live version: https://capitalisming.github.io/Vision/ (GitHub Pages, published from `main`). On a Raspberry Pi 4
+this page can use a camera plugged into the Pi directly; a Pi camera over the network needs the Pi server to run
+with `--https` (see [pi/README.md](pi/README.md)).
 
 ```bash
 npm run serve          # http://localhost:8000
@@ -53,9 +61,14 @@ with a moving test pattern as the camera.
 3. **Distance.** *Near · 40 cm* (the default when the screen is sharp enough), *Far · 1 m*, or any other distance. It can be measured in two
    ways:
    - **Tape measure:** you type the distance.
-   - **Camera:** it needs a one-time calibration. Sit with your eyes 50 cm from the screen, measured with a tape
-     or ruler, and press Calibrate. After that the camera tracks the distance on its own. Each camera has its
-     own calibration.
+   - **Camera:** choosing it asks the browser for the camera, and the list above the picture shows every camera
+     of the device (and *Raspberry Pi over the network*). *Turn camera off* stops it.
+     The calibration is automatic: look at the screen and hold still for about two seconds. The app measures
+     the distance between your outer eye corners in mm, using the iris (11.7 mm across in adults) as the ruler.
+     Until the camera has been checked once with a tape, its field of view is assumed (62°), so the distance is
+     an estimate that can be off by up to about 20%; the app says so, and the session notes record it.
+     *Check with a tape* (sit at 50 cm, press the button) gives the precise calibration and also measures the
+     camera, so later automatic calibrations with it are precise too. Each camera has its own calibration.
 
 During the test, answer with the arrow keys, or tap or click the arrows on screen. Esc or *Stop* ends the test.
 
@@ -72,7 +85,8 @@ A Raspberry Pi 4 can supply the camera; see [pi/README.md](pi/README.md).
 - **No number without trust.** The test gives no score when:
   - the screen cannot draw the next level (`floor_hit`);
   - level 1.3 is failed (`worse_than_1.3`);
-  - the camera loses the face for five trials in a row (`aborted_camera`).
+  - the camera loses the face for five trials in a row (`aborted_camera`);
+  - camera mode is chosen but there is no calibration for that participant and camera (the test does not start).
 - **Personal baseline.** Built from the first five measured tests with the same participant, eye, glasses and
   distance. The band is the prediction interval mean ± t(0.975, 4) · sd · √(1 + 1/5), and never narrower than
   ±0.10 logMAR.
@@ -98,7 +112,8 @@ npm run test:pi        # Raspberry Pi camera server (Python)
 ## Limits
 
 - Not tested in microgravity or in a clinical setting.
-- Camera distance accuracy has not been measured yet.
+- Camera distance accuracy has not been measured yet. The automatic calibration rests on two assumptions (iris
+  11.7 mm, field of view 62° until a tape check): an estimate, not a measurement.
 - The smallest sign depends on the screen's pixel size and the distance. The app works out this limit and
   reports *Beyond screen* instead of a number.
 - No contrast, Amsler grid or blind-spot tests.
