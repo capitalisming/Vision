@@ -73,8 +73,8 @@ During the test, answer with the arrow keys, or tap or click the arrows on scree
 The camera is shown small above the ring, and says when it does not see the face.
 
 **Progress** shows the advice for the newest test and the trend against the personal baseline. **History**
-lists every test and exports `sessions.csv` and `trials.csv`. A test can be deleted with *Delete* on its row, or
-the whole history with *Delete all* (it asks first; export a copy before).
+lists every test and exports `sessions.csv` and `trials.csv`. *Delete…* puts a tick box on every row: tick one or
+more tests and press *Delete selected*, or press *Delete all*. Both ask first; export a copy before.
 
 A Raspberry Pi 4 can supply the camera; see [pi/README.md](pi/README.md).
 

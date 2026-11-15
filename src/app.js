@@ -13,7 +13,7 @@ import { renderTrend } from './ui-trend.js';
 import { renderAction } from './ui-action.js';
 import { toBaselineSessions, latestAction } from './trend-data.js';
 import { whyThisTestElement } from './why-text.js';
-import { listSessions, saveSession, deleteSession, deleteAllSessions, exportCsv, exportJson, importJson } from './storage.js';
+import { listSessions, saveSession, deleteSessions, deleteAllSessions, exportCsv, exportJson, importJson } from './storage.js';
 
 const state = {
   screen: 'screen-home',
@@ -49,7 +49,7 @@ window.addEventListener('unhandledrejection', (e) => showError(`Error: ${e.reaso
 
 const enterHandlers = {
   'screen-home': renderHome,
-  'screen-log': renderLog,
+  'screen-log': () => { logSelect.on = false; logSelect.ids.clear(); renderLog(); }, // opens without delete mode
   'screen-progress': enterProgress,
   'screen-setup': enterSetup,
   'screen-result': renderResult,
@@ -143,6 +143,26 @@ function renderHome() {
 
 // ---------- log ----------
 
+// Delete mode: "Delete…" shows a tick box on every row; the ticked tests, or all of them, can then be deleted.
+const logSelect = { on: false, ids: new Set() };
+
+function setDeleteMode(on) {
+  logSelect.on = on;
+  logSelect.ids.clear();
+  renderLog();
+}
+
+function syncDeleteBar(total) {
+  const n = logSelect.ids.size;
+  $('.delete-bar').hidden = !logSelect.on;
+  $('table.sessions').classList.toggle('is-selecting', logSelect.on);
+  $('[data-action=delete-mode]').hidden = logSelect.on || !total;
+  $('.delete-count').textContent = n ? `${n} of ${total} selected.` : 'Tick the tests to delete.';
+  const del = $('[data-action=delete-selected]');
+  del.disabled = !n;
+  del.textContent = n ? `Delete selected (${n})` : 'Delete selected';
+}
+
 function renderLog() {
   const tbody = $('table.sessions tbody');
   tbody.textContent = '';
@@ -153,7 +173,10 @@ function renderLog() {
     showError(err.message);
     return;
   }
-  $('[data-action=delete-all]').hidden = !sessions.length;
+  if (!sessions.length) logSelect.on = false;
+  const known = new Set(sessions.map((s) => s.session_id));
+  for (const id of logSelect.ids) if (!known.has(id)) logSelect.ids.delete(id);
+  syncDeleteBar(sessions.length);
   if (!sessions.length) {
     const td = tbody.insertRow().insertCell();
     td.colSpan = 7;
@@ -168,6 +191,24 @@ function renderLog() {
   for (const s of [...sessions].reverse()) {
     const tr = tbody.insertRow();
     const when = new Date(s.started_at).toLocaleString();
+    const pick = tr.insertCell();
+    pick.className = 'c-select';
+    const box = Object.assign(document.createElement('input'), { type: 'checkbox', checked: logSelect.ids.has(s.session_id) });
+    box.setAttribute('aria-label', `Select test ${s.participant} ${s.eye}, ${when}`);
+    const mark = () => {
+      if (box.checked) logSelect.ids.add(s.session_id); else logSelect.ids.delete(s.session_id);
+      tr.classList.toggle('is-selected', box.checked);
+      syncDeleteBar(sessions.length);
+    };
+    box.addEventListener('change', mark);
+    pick.append(box);
+    tr.classList.toggle('is-selected', box.checked);
+    // In delete mode a tap anywhere on the row ticks it.
+    tr.addEventListener('click', (e) => {
+      if (!logSelect.on || e.target === box) return;
+      box.checked = !box.checked;
+      mark();
+    });
     const started = tr.insertCell();
     started.className = 'c-started';
     started.append(when, Object.assign(document.createElement('small'), {
@@ -178,22 +219,28 @@ function renderLog() {
       td.className = key === 'outcome' ? `c-outcome ${OUTCOME_TONE[s.outcome] ?? 'is-stop'}` : `c-${key}`;
       td.textContent = value(s);
     }
-    const del = document.createElement('button');
-    del.type = 'button';
-    del.className = 'link danger';
-    del.textContent = 'Delete';
-    del.setAttribute('aria-label', `Delete session ${s.participant} ${s.eye}, ${when}`);
-    del.addEventListener('click', () => {
-      if (confirm(`Delete session ${s.participant} ${s.eye}, ${when}? This cannot be undone.`)) {
-        deleteSession(s.session_id);
-        renderLog();
-      }
-    });
-    const actions = tr.insertCell();
-    actions.className = 'c-actions';
-    actions.append(del);
   }
 }
+
+$('[data-action=delete-mode]').addEventListener('click', () => setDeleteMode(true));
+$('[data-action=delete-cancel]').addEventListener('click', () => setDeleteMode(false));
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && logSelect.on && state.screen === 'screen-log') setDeleteMode(false);
+});
+$('[data-action=delete-selected]').addEventListener('click', () => {
+  const ids = [...logSelect.ids];
+  if (!ids.length) return;
+  const what = ids.length === 1 ? 'the selected test' : `the ${ids.length} selected tests`;
+  if (!confirm(`Delete ${what}? This cannot be undone.`)) return;
+  try {
+    const n = deleteSessions(ids);
+    $('.io-status').textContent = `Deleted ${n === 1 ? '1 test' : `${n} tests`}.`;
+  } catch (err) {
+    showError(err.message);
+  }
+  setDeleteMode(false);
+  renderHome();
+});
 
 function download(name, text, type) {
   const blob = new Blob([text], { type: `${type};charset=utf-8` });
@@ -228,7 +275,7 @@ $('[data-action=delete-all]').addEventListener('click', () => {
   } catch (err) {
     showError(err.message);
   }
-  renderLog();
+  setDeleteMode(false);
   renderHome();
 });
 $('[data-action=import-json]').addEventListener('change', async (e) => {

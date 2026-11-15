@@ -186,12 +186,18 @@
         <button type="button" class="small" data-action="export-csv">Export CSV</button>
         <button type="button" class="small" data-action="export-json">Export JSON</button>
         <label class="file-button small">Import JSON<input type="file" accept="application/json,.json" data-action="import-json" class="sr-only"></label>
+        <button type="button" class="small ghost danger" data-action="delete-mode">Delete…</button>
+      </div>
+      <div class="row delete-bar" hidden>
+        <span class="delete-count" role="status">Tick the tests to delete.</span>
+        <button type="button" class="small danger-fill" data-action="delete-selected" disabled>Delete selected</button>
         <button type="button" class="small ghost danger" data-action="delete-all">Delete all</button>
+        <button type="button" class="small ghost" data-action="delete-cancel">Cancel</button>
       </div>
       <p class="io-status" role="status"></p>
       <table class="sessions">
-        <thead><tr><th>Started</th><th>Participant</th><th>Eye</th><th>Glasses</th><th>Result</th>
-          <th class="num">logMAR</th><th><span class="sr-only">Actions</span></th></tr></thead>
+        <thead><tr><th class="c-select"><span class="sr-only">Select</span></th><th>Started</th><th>Participant</th>
+          <th>Eye</th><th>Glasses</th><th>Result</th><th class="num">logMAR</th></tr></thead>
         <tbody></tbody>
       </table>
     </section>
