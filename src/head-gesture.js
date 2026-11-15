@@ -231,24 +231,27 @@ export function createHeadTraining({
 
 export const HEAD_SETTINGS_KEY = 'head_answers';
 
-/** { enabled: boolean, signs: { [cameraId]: {x, y} } } */
+/** { enabled: boolean, signs: { [cameraId]: {x, y} } }. On by default: only a saved "off" turns it off. */
 export function loadHeadSettings(storage = globalThis.localStorage) {
   try {
     const v = JSON.parse(storage?.getItem(HEAD_SETTINGS_KEY) ?? 'null');
     if (v && typeof v === 'object') {
       const signs = {};
       for (const [id, s] of Object.entries(v.signs ?? {})) signs[id] = cleanSigns(s);
-      return { enabled: v.enabled === true, signs };
+      return { enabled: v.enabled !== false, signs };
     }
   } catch {
     // damaged settings: start over
   }
-  return { enabled: false, signs: {} };
+  return { enabled: true, signs: {} };
 }
 
 export function saveHeadSettings(settings, storage = globalThis.localStorage) {
   storage.setItem(HEAD_SETTINGS_KEY, JSON.stringify({ enabled: settings.enabled === true, signs: settings.signs ?? {} }));
 }
+
+/** The directions of the raw picture (see the top of this file), used until the practice was done. */
+export const DEFAULT_HEAD_SIGNS = DEFAULT_SIGNS;
 
 /** The trained signs for this camera, or null when it was not trained with it. */
 export function signsFor(settings, cameraId) {

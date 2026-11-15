@@ -222,9 +222,11 @@ test('practice: the wrong axis, or no face, gives a hint and does not count', ()
   assert.equal(r.signs, null);
 });
 
-test('settings: own key, per camera, damaged value is ignored', () => {
+test('settings: on by default, own key, per camera, damaged value is ignored', () => {
   const m = installLocalStorage();
-  assert.deepEqual(loadHeadSettings(), { enabled: false, signs: {} });
+  assert.deepEqual(loadHeadSettings(), { enabled: true, signs: {} });
+  saveHeadSettings({ enabled: false, signs: {} });
+  assert.equal(loadHeadSettings().enabled, false, 'switched off stays off');
   let s = withSigns({ enabled: true, signs: {} }, 'pi:https://pi:8000', { x: -1, y: 1 });
   s = withSigns(s, '', { x: 1, y: 7 });
   saveHeadSettings(s);
@@ -235,5 +237,5 @@ test('settings: own key, per camera, damaged value is ignored', () => {
   assert.deepEqual(signsFor(back, ''), { x: 1, y: 1 });
   assert.equal(signsFor(back, 'dev:other'), null);
   localStorage.setItem(HEAD_SETTINGS_KEY, '{broken');
-  assert.deepEqual(loadHeadSettings(), { enabled: false, signs: {} });
+  assert.deepEqual(loadHeadSettings(), { enabled: true, signs: {} });
 });

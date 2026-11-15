@@ -50,20 +50,32 @@ const HEAD_HINT_TEXT = {
   only_sideways: 'Turn your head only to the side, not up or down.',
 };
 
+export const ARROWS_FALLBACK_TEXT = 'If you cannot turn your head, or the camera does not work, answer with the arrows.';
+
 /** What step 3 says about answers by head turn. */
 export function headStatusText({ enabled, trained, training = null, camera = true }) {
-  if (!enabled) return '';
-  if (!camera) return 'Head answers need the camera.';
+  if (!enabled) return 'Off: answer with the arrow keys or the arrows on screen.';
+  if (!camera) return `Head answers need the camera. ${ARROWS_FALLBACK_TEXT}`;
   if (training) {
     if (training.hint) return HEAD_HINT_TEXT[training.hint] ?? training.hint;
     return HEAD_TRAINING_TEXT[training.state] ?? '';
   }
   if (trained) {
     return 'On: in the test, turn your head toward the gap in the ring and hold it for a moment. '
-      + 'The arrow keys and buttons still work.';
+      + ARROWS_FALLBACK_TEXT;
   }
-  return 'Practise once with this camera before the test, so the app knows which way your head moves. '
-    + 'Until then the test uses the arrows.';
+  return 'On. A short practice helps the app learn which way your head moves on this camera. '
+    + ARROWS_FALLBACK_TEXT;
+}
+
+/**
+ * The line under the camera during the test: '' while the face is seen, else what is wrong and that the arrows
+ * work. @param d  getDistance() of src/distance.js
+ */
+export function testCameraStatus(d, headOn) {
+  if (d?.reason === null || d?.reason === undefined) return '';
+  if (d.reason === 'head_turned' && headOn) return ''; // that is what a head answer looks like
+  return `${describeReason(d.reason)} ${headOn ? 'Answer with the arrows.' : ''}`.trim();
 }
 
 export function describeReason(reason) {
@@ -388,6 +400,7 @@ export function mountCameraStep(container, {
   let training = null; // createHeadTraining() while practising
   let trainingReport = null;
   let headFlash = { text: '', until: 0 };
+  let autoPractice = true; // the practice starts by itself once, when the camera sees a face
   headBox.checked = headSettings.enabled;
   headBox.disabled = !distance;
   const startTraining = () => {
@@ -400,9 +413,17 @@ export function mountCameraStep(container, {
     saveHeadSettings(headSettings);
     if (headBox.checked && !signsFor(headSettings, cameraId)) startTraining();
     if (!headBox.checked) training = null;
+    autoPractice = false;
   });
-  headTrainBtn.addEventListener('click', startTraining);
+  headTrainBtn.addEventListener('click', () => {
+    if (training) training = null; else startTraining();
+  });
   function headTick(running) {
+    if (autoPractice && running && headSettings.enabled && !training && !signsFor(headSettings, cameraId)
+      && distance.getHeadLandmarks?.()) {
+      autoPractice = false;
+      startTraining();
+    }
     if (training && running) {
       const lm = distance.getHeadLandmarks?.() ?? null;
       trainingReport = training.update(headPose(lm), lm?.t ?? performance.now());
@@ -422,8 +443,8 @@ export function mountCameraStep(container, {
     const text = headFlash.until > Date.now() && headSettings.enabled ? headFlash.text
       : headStatusText({ enabled: headSettings.enabled, trained, training: training && trainingReport, camera: running });
     set(headStatus, 'textContent', text);
-    headTrainBtn.hidden = !headSettings.enabled || Boolean(training) || !running;
-    set(headTrainBtn, 'textContent', trained ? 'Practise again' : 'Practise');
+    headTrainBtn.hidden = !headSettings.enabled || !running;
+    set(headTrainBtn, 'textContent', training ? 'Skip the practice' : (trained ? 'Practise again' : 'Practise'));
   }
 
   // ----- live view: one pass per frame, text only when it changes
