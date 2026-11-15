@@ -29,6 +29,9 @@ limit there was logMAR 0.4. That is why the default depends on the screen.
 
 ## Run it
 
+Live version: https://capitalisming.github.io/Vision/ (GitHub Pages, published from `main`). The Raspberry Pi
+camera needs the app opened over `http` from the Pi, so it does not work from this `https` page.
+
 ```bash
 npm run serve          # http://localhost:8000
 ```
