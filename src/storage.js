@@ -94,6 +94,15 @@ export function deleteSession(id) {
   return true;
 }
 
+/** Delete the sessions with these ids. Returns how many were deleted. */
+export function deleteSessions(ids) {
+  const drop = new Set(ids);
+  const all = readAll();
+  const next = all.filter((s) => !drop.has(s.session_id));
+  if (next.length !== all.length) writeAll(next);
+  return all.length - next.length;
+}
+
 /** Delete every stored session. Returns how many there were. */
 export function deleteAllSessions() {
   const n = readAll().length;

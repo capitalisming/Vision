@@ -137,3 +137,12 @@ test('delete all removes every session and reports how many there were', async (
   assert.equal(deleteAllSessions(), 2);
   assert.deepEqual(listSessions(), []);
 });
+
+test('delete several: only the chosen sessions go, the count is returned', async () => {
+  const { deleteSessions } = await import('../src/storage.js');
+  const a = await makeSession(0); const b = await makeSession(1); const c = await makeSession(2);
+  for (const s of [a, b, c]) saveSession(s);
+  assert.equal(deleteSessions([a.session_id, c.session_id, 'no-such-id']), 2);
+  assert.deepEqual(listSessions().map((s) => s.session_id), [b.session_id]);
+  assert.equal(deleteSessions([]), 0);
+});

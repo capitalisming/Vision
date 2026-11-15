@@ -8,25 +8,31 @@ import { paintIris } from './iris.js';
 import { initHomeScroll } from './home-scroll.js';
 import { connectPiCamera, normalizePiUrl } from './pi-camera.js';
 import { loadCameraSettings, saveCameraSettings, cameraId, describeCamera } from './camera-source.js';
-import { STEPS, stepStatus, firstOpenStep, nextStep, stepSummary, loadSetup, saveSetup, suggestDistance, startBlocker, NEAR_MM, FAR_MM } from './setup-flow.js';
+import { STEPS, stepStatus, firstOpenStep, nextStep, stepSummary, loadSetup, saveSetup, suggestDistance, startBlocker, NEAR_MM } from './setup-flow.js';
 import { renderTrend } from './ui-trend.js';
 import { renderAction } from './ui-action.js';
 import { toBaselineSessions, latestAction } from './trend-data.js';
 import { whyThisTestElement } from './why-text.js';
-import { listSessions, saveSession, deleteSession, deleteAllSessions, exportCsv, exportJson, importJson } from './storage.js';
+import { listSessions, saveSession, deleteSessions, deleteAllSessions, exportCsv, exportJson, importJson } from './storage.js';
 
 const state = {
   screen: 'screen-home',
   testRunning: false,
   lastSession: null,
   distance: null, // participant 2's src/distance.js module, loaded on first camera-mode session
-  camera: loadCameraSettings(), // which camera measures the distance: this computer or a Raspberry Pi
+  camera: localCamera(loadCameraSettings()), // which of this computer's cameras measures the distance
   piCamera: null, // the running Raspberry Pi feed, if any
   cameraUi: null, // src/camera-screen.js, loaded when the camera step is first shown
   pendingStep: null, // step of the Test flow that a link asked for
   setupPrefilled: false,
   distanceChosen: false, // the user (or the last test) picked the distance; stop suggesting one
+  cameraFreshFor: '', // participant whose distance was measured since step 3 was last opened ('' = none)
 };
+
+/** Only this computer's cameras are offered: a saved Raspberry Pi choice falls back to the default camera. */
+function localCamera(settings) {
+  return settings.source === 'pi' ? { source: 'local', piUrl: '' } : settings;
+}
 
 const $ = (sel, root = document) => root.querySelector(sel);
 
@@ -49,7 +55,7 @@ window.addEventListener('unhandledrejection', (e) => showError(`Error: ${e.reaso
 
 const enterHandlers = {
   'screen-home': renderHome,
-  'screen-log': renderLog,
+  'screen-log': () => { logSelect.on = false; logSelect.ids.clear(); renderLog(); }, // opens without delete mode
   'screen-progress': enterProgress,
   'screen-setup': enterSetup,
   'screen-result': renderResult,
@@ -143,6 +149,26 @@ function renderHome() {
 
 // ---------- log ----------
 
+// Delete mode: "Delete…" shows a tick box on every row; the ticked tests, or all of them, can then be deleted.
+const logSelect = { on: false, ids: new Set() };
+
+function setDeleteMode(on) {
+  logSelect.on = on;
+  logSelect.ids.clear();
+  renderLog();
+}
+
+function syncDeleteBar(total) {
+  const n = logSelect.ids.size;
+  $('.delete-bar').hidden = !logSelect.on;
+  $('table.sessions').classList.toggle('is-selecting', logSelect.on);
+  $('[data-action=delete-mode]').hidden = logSelect.on || !total;
+  $('.delete-count').textContent = n ? `${n} of ${total} selected.` : 'Tick the tests to delete.';
+  const del = $('[data-action=delete-selected]');
+  del.disabled = !n;
+  del.textContent = n ? `Delete selected (${n})` : 'Delete selected';
+}
+
 function renderLog() {
   const tbody = $('table.sessions tbody');
   tbody.textContent = '';
@@ -153,7 +179,10 @@ function renderLog() {
     showError(err.message);
     return;
   }
-  $('[data-action=delete-all]').hidden = !sessions.length;
+  if (!sessions.length) logSelect.on = false;
+  const known = new Set(sessions.map((s) => s.session_id));
+  for (const id of logSelect.ids) if (!known.has(id)) logSelect.ids.delete(id);
+  syncDeleteBar(sessions.length);
   if (!sessions.length) {
     const td = tbody.insertRow().insertCell();
     td.colSpan = 7;
@@ -168,6 +197,24 @@ function renderLog() {
   for (const s of [...sessions].reverse()) {
     const tr = tbody.insertRow();
     const when = new Date(s.started_at).toLocaleString();
+    const pick = tr.insertCell();
+    pick.className = 'c-select';
+    const box = Object.assign(document.createElement('input'), { type: 'checkbox', checked: logSelect.ids.has(s.session_id) });
+    box.setAttribute('aria-label', `Select test ${s.participant} ${s.eye}, ${when}`);
+    const mark = () => {
+      if (box.checked) logSelect.ids.add(s.session_id); else logSelect.ids.delete(s.session_id);
+      tr.classList.toggle('is-selected', box.checked);
+      syncDeleteBar(sessions.length);
+    };
+    box.addEventListener('change', mark);
+    pick.append(box);
+    tr.classList.toggle('is-selected', box.checked);
+    // In delete mode a tap anywhere on the row ticks it.
+    tr.addEventListener('click', (e) => {
+      if (!logSelect.on || e.target === box) return;
+      box.checked = !box.checked;
+      mark();
+    });
     const started = tr.insertCell();
     started.className = 'c-started';
     started.append(when, Object.assign(document.createElement('small'), {
@@ -178,22 +225,28 @@ function renderLog() {
       td.className = key === 'outcome' ? `c-outcome ${OUTCOME_TONE[s.outcome] ?? 'is-stop'}` : `c-${key}`;
       td.textContent = value(s);
     }
-    const del = document.createElement('button');
-    del.type = 'button';
-    del.className = 'link danger';
-    del.textContent = 'Delete';
-    del.setAttribute('aria-label', `Delete session ${s.participant} ${s.eye}, ${when}`);
-    del.addEventListener('click', () => {
-      if (confirm(`Delete session ${s.participant} ${s.eye}, ${when}? This cannot be undone.`)) {
-        deleteSession(s.session_id);
-        renderLog();
-      }
-    });
-    const actions = tr.insertCell();
-    actions.className = 'c-actions';
-    actions.append(del);
   }
 }
+
+$('[data-action=delete-mode]').addEventListener('click', () => setDeleteMode(true));
+$('[data-action=delete-cancel]').addEventListener('click', () => setDeleteMode(false));
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && logSelect.on && state.screen === 'screen-log') setDeleteMode(false);
+});
+$('[data-action=delete-selected]').addEventListener('click', () => {
+  const ids = [...logSelect.ids];
+  if (!ids.length) return;
+  const what = ids.length === 1 ? 'the selected test' : `the ${ids.length} selected tests`;
+  if (!confirm(`Delete ${what}? This cannot be undone.`)) return;
+  try {
+    const n = deleteSessions(ids);
+    $('.io-status').textContent = `Deleted ${n === 1 ? '1 test' : `${n} tests`}.`;
+  } catch (err) {
+    showError(err.message);
+  }
+  setDeleteMode(false);
+  renderHome();
+});
 
 function download(name, text, type) {
   const blob = new Blob([text], { type: `${type};charset=utf-8` });
@@ -228,7 +281,7 @@ $('[data-action=delete-all]').addEventListener('click', () => {
   } catch (err) {
     showError(err.message);
   }
-  renderLog();
+  setDeleteMode(false);
   renderHome();
 });
 $('[data-action=import-json]').addEventListener('change', async (e) => {
@@ -303,23 +356,8 @@ function suggestForScreen() {
   const suggested = p ? suggestDistance(floorAt) : NEAR_MM;
   if (!state.distanceChosen) {
     $('[name=targetMm]').value = String(suggested);
-    syncDistancePreset();
     updateFloorHint();
   }
-  const near = floorAt(NEAR_MM);
-  $('[data-role=distance-why]').textContent = suggested === FAR_MM
-    ? (near == null
-      ? '1 m is suggested: at 40 cm this screen cannot draw the test signs.'
-      : `1 m is suggested: at 40 cm this screen can only show logMAR ${near.toFixed(1)}, so good near vision would read "Beyond screen". `
-        + 'Near vision matters because a hyperopic shift in space makes close-up vision worse (see Why this test on Home).')
-    : 'Near is suggested: a hyperopic shift in space makes close-up vision worse (see Why this test on Home).';
-}
-
-/** Keep the Near / Far / Other choice in step with the distance field. */
-function syncDistancePreset() {
-  const mm = $('[name=targetMm]').value;
-  const value = mm === '400' || mm === '1000' ? mm : 'custom';
-  wizard.querySelector(`[name=distancePreset][value="${value}"]`).checked = true;
 }
 
 /** Everything the three steps know, in the shape src/setup-flow.js expects. */
@@ -338,7 +376,9 @@ function setupData() {
     zoomChanged: Boolean(p) && calibrationDprChanged(),
     pxPerMm: p ?? 0,
     cameraLabel,
-    cameraCalibrated: Boolean(state.distance && CODE_RE.test(v.participant) && state.distance.getK(v.participant)),
+    // Measured in this visit to step 3, for this participant: an old calibration alone is not enough.
+    cameraCalibrated: Boolean(state.distance && CODE_RE.test(v.participant) && state.cameraFreshFor === v.participant
+      && state.distance.getK(v.participant)),
   };
 }
 
@@ -379,6 +419,10 @@ function openStep(step, { scroll = false } = {}) {
 function prefillSetup() {
   const saved = loadSetup();
   if (!saved) return;
+  const condition = wizard.querySelector('[name=condition]');
+  if (saved.condition && ![...condition.options].some((o) => o.value === saved.condition)) {
+    condition.append(new Option(saved.condition, saved.condition)); // a label typed in an older version
+  }
   for (const name of ['participant', 'condition', 'targetMm']) {
     if (saved[name] !== '') wizard.querySelector(`[name=${name}]`).value = saved[name];
   }
@@ -395,8 +439,8 @@ function enterSetup() {
     state.setupPrefilled = true;
   }
   suggestForScreen();
-  syncDistancePreset();
   $('.form-errors').textContent = '';
+  loadDistanceModule().then((m) => m.preloadFaceTracker?.(), () => {}); // ready by the time step 3 opens
   openedStep = null;
   const requested = state.pendingStep;
   state.pendingStep = null;
@@ -419,19 +463,8 @@ wizard.addEventListener('input', (e) => {
   if (e.target.name === 'targetMm') {
     state.distanceChosen = true;
     updateFloorHint();
-    syncDistancePreset();
   }
   refreshWizard();
-});
-
-wizard.addEventListener('change', (e) => {
-  if (e.target.name === 'distancePreset') state.distanceChosen = true;
-  if (e.target.name === 'distancePreset' && e.target.value !== 'custom') {
-    $('[name=targetMm]').value = e.target.value;
-    updateFloorHint();
-    refreshWizard();
-  }
-  if (e.target.name === 'distancePreset' && e.target.value === 'custom') $('[name=targetMm]').focus();
 });
 
 form.addEventListener('submit', async (e) => {
@@ -573,6 +606,8 @@ async function mountDistanceStep() {
   const embed = $('[data-role=camera-embed]');
   const code = readForm().participant;
   const participant = CODE_RE.test(code) ? code : '';
+  state.cameraFreshFor = ''; // the distance is measured again every time the step opens
+  refreshWizard();
   let distance = null;
   let error = '';
   try {
@@ -593,7 +628,11 @@ async function mountDistanceStep() {
     distance, error, participant,
     source: { settings: state.camera, label },
     onSourceChange: applyCameraSettings,
-    onCalibrated: refreshWizard,
+    onCalibrated: (ok) => {
+      if (token !== cameraMountToken) return;
+      state.cameraFreshFor = ok ? participant : '';
+      refreshWizard();
+    },
     onCameraOff: stopPiCamera,
   });
   refreshWizard();
