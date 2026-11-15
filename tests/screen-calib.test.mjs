@@ -38,3 +38,11 @@ test('zoom change since calibration is detected', () => {
   globalThis.devicePixelRatio = 1.25;
   assert.equal(calibrationDprChanged(), true);
 });
+
+test('the card outline never gets wider than the space it is drawn in', async () => {
+  const { maxFittingWidth } = await import('../src/screen-calib.js');
+  assert.equal(maxFittingWidth(318.7), 318.5, 'phone: the area is the limit, in 0.5 px steps');
+  assert.equal(maxFittingWidth(5000), 1200, 'never more than the allowed maximum');
+  assert.equal(maxFittingWidth(50), 120, 'never less than the allowed minimum');
+  assert.equal(maxFittingWidth(0), 1200, 'unknown space: the allowed maximum');
+});

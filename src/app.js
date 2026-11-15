@@ -8,7 +8,7 @@ import { paintIris } from './iris.js';
 import { initHomeScroll } from './home-scroll.js';
 import { connectPiCamera, normalizePiUrl } from './pi-camera.js';
 import { loadCameraSettings, saveCameraSettings, cameraId, describeCamera } from './camera-source.js';
-import { STEPS, stepStatus, firstOpenStep, nextStep, stepSummary, loadSetup, saveSetup, suggestDistance, NEAR_MM, FAR_MM } from './setup-flow.js';
+import { STEPS, stepStatus, firstOpenStep, nextStep, stepSummary, loadSetup, saveSetup, suggestDistance, startBlocker, NEAR_MM, FAR_MM } from './setup-flow.js';
 import { renderTrend } from './ui-trend.js';
 import { renderAction } from './ui-action.js';
 import { toBaselineSessions, latestAction } from './trend-data.js';
@@ -340,6 +340,10 @@ function refreshWizard() {
     const next = li.querySelector('[data-act=continue]');
     if (next) next.disabled = !status[step];
   }
+  // No test without a calibrated screen (and camera, in camera mode).
+  const blocked = startBlocker(d);
+  $('[data-role=start]').disabled = Boolean(blocked);
+  $('[data-role=start-blocked]').textContent = blocked;
   $('[data-role=distance-label]').textContent = d.distanceMode === 'camera'
     ? 'Distance to sit at, mm' : 'Distance to the screen, mm (measure it with a tape)';
 }
@@ -424,6 +428,8 @@ form.addEventListener('submit', async (e) => {
   const pxPerMm = getPxPerMm();
   const errs = validateSetup(v, pxPerMm);
   if (v.distanceMode === 'camera' && !setupData().cameraCalibrated) errs.push('The camera is not calibrated yet. Do it in step 3.');
+  const blocked = startBlocker(setupData());
+  if (blocked && !errs.length) errs.push(blocked); // also when Enter is pressed in a field
   const list = $('.form-errors');
   list.textContent = '';
   for (const m of errs) list.append(Object.assign(document.createElement('li'), { textContent: m }));
