@@ -185,3 +185,105 @@ test('buildSession produces exactly the contract fields plus trials and passes v
   assert.equal(s.sd_mm, 0);
   assert.ok(s.trials.every((t) => t.session_id === s.session_id));
 });
+
+// ----- answers by head turn (SYNTHETIC head and distance) -----
+// A simulated person who answers by turning the head. While the head is turned the camera gives no distance
+// (head_turned), as src/distance.js does past 15°. After the answer the head comes back after `returnPolls`
+// polls of the wait between signs.
+function headWorld({ returnPolls = 2, holdMs = 0, neverBack = false, jumpBeforeGestureMm = null } = {}) {
+  const w = { turned: false, started: false, resets: 0, waitCalls: 0, presents: 0, mm: 1000, returnIn: 0 };
+  w.getDistance = () => (w.turned
+    ? { mm: null, ageMs: 0, ok: false, reason: 'head_turned' }
+    : { mm: w.mm, ageMs: 0, ok: true, reason: '' });
+  w.head = {
+    resetNeutral: () => { w.resets += 1; w.started = false; },
+    gestureStarted: () => w.started,
+    isNeutral: () => !w.turned,
+  };
+  w.wait = async () => {
+    w.waitCalls += 1;
+    if (w.turned && !neverBack && --w.returnIn <= 0) w.turned = false;
+  };
+  w.observer = (inner) => async (spec) => {
+    w.presents += 1;
+    const ans = await inner(spec);
+    if (jumpBeforeGestureMm != null && w.presents === 1) {
+      w.mm = jumpBeforeGestureMm; // the person moved before turning the head
+      await new Promise((r) => setTimeout(r, 250)); // the monitor runs every 100 ms
+      w.mm = 1000;
+    }
+    w.started = true; // gesture onset, then the head is past the distance limit
+    w.turned = true;
+    w.returnIn = returnPolls;
+    if (holdMs) await new Promise((r) => setTimeout(r, holdMs)); // the monitor runs during the turn
+    return ans;
+  };
+  return w;
+}
+
+test('head answers: turning the head does not make trials invalid; same result as with arrows', async () => {
+  const w = headWorld({ holdMs: 0 });
+  const present = w.observer(scriptedObserver(plan028));
+  const r = await runProcedure({ getDistance: w.getDistance, pxPerMm: PX, present, wait: w.wait, head: w.head });
+  assert.equal(r.outcome, 'ok');
+  assert.equal(r.logmar, 0.28);
+  assert.equal(r.trials.filter((t) => !t.valid).length, 0, 'no trial lost to the head turn');
+  assert.equal(w.resets, r.trials.length, 'neutral taken at every sign');
+  assert.ok(r.trials.every((t) => t.distance_mm === 1000), 'distance from the moment the sign was shown');
+});
+
+test('head answers: the monitor stops reading the distance once the gesture started', async () => {
+  const w = headWorld({ holdMs: 250 });
+  let n = 0;
+  const present = w.observer(async (spec) => (++n <= 2 ? scriptedObserver(() => 1)(spec) : { abort: true }));
+  const r = await runProcedure({ getDistance: w.getDistance, pxPerMm: PX, present, wait: w.wait, head: w.head });
+  assert.equal(r.outcome, 'aborted_user');
+  assert.equal(r.trials.length, 2);
+  assert.ok(r.trials.every((t) => t.valid), 'head_turned readings during the gesture were not counted against it');
+});
+
+test('head answers: a distance change before the gesture still makes the trial invalid', async () => {
+  const w = headWorld({ jumpBeforeGestureMm: 1200 });
+  let n = 0;
+  const present = w.observer(async (spec) => (++n <= 2 ? scriptedObserver(() => 1)(spec) : { abort: true }));
+  const r = await runProcedure({ getDistance: w.getDistance, pxPerMm: PX, present, wait: w.wait, head: w.head });
+  assert.equal(r.trials[0].valid, false);
+  assert.equal(r.trials[1].valid, true);
+});
+
+test('head answers: no distance when the sign would be shown -> not shown, aborted_camera as before', async () => {
+  const w = headWorld();
+  const r = await runProcedure({
+    getDistance: () => ({ mm: null, ageMs: 0, ok: false, reason: 'no_face' }), pxPerMm: PX, wait: noWait,
+    head: w.head, present: async () => assert.fail('nothing must be shown without a distance'),
+  });
+  assert.equal(r.outcome, 'aborted_camera');
+  assert.equal(r.trials.length, MAX_CONSECUTIVE_INVALID);
+  assert.equal(w.resets, 0);
+});
+
+test('head answers: waiting for the head to come back is not an invalid trial', async () => {
+  const w = headWorld({ returnPolls: 20 }); // 2 s at 100 ms polls: also shows the quiet hint
+  const notes = [];
+  let n = 0;
+  const present = w.observer(async (spec) => (++n <= 3 ? scriptedObserver(() => 1)(spec) : { abort: true }));
+  const r = await runProcedure({ getDistance: w.getDistance, pxPerMm: PX, present, wait: w.wait, head: w.head,
+    notify: (m) => notes.push(m) });
+  assert.equal(r.trials.length, 3);
+  assert.ok(r.trials.every((t) => t.valid));
+  assert.ok(w.waitCalls >= 3 * 19, 'waited for the head between signs');
+  assert.ok(notes.includes('Look straight at the screen again.'));
+  assert.ok(!notes.some((m) => /not counted/.test(m)));
+});
+
+test('head answers: a head that never comes back ends in aborted_camera, never in a number', async () => {
+  const w = headWorld({ neverBack: true });
+  const r = await runProcedure({ getDistance: w.getDistance, pxPerMm: PX, wait: w.wait, head: w.head,
+    present: w.observer(scriptedObserver(() => 1)) });
+  assert.equal(r.outcome, 'aborted_camera');
+  assert.equal(r.logmar, null);
+  assert.equal(r.trials.filter((t) => t.valid).length, 1);
+  assert.equal(r.trials.filter((t) => !t.valid).length, MAX_CONSECUTIVE_INVALID);
+  assert.match(r.reason, /head_turned/);
+  assert.ok(w.waitCalls < 200, 'the wait for the head has a limit');
+});

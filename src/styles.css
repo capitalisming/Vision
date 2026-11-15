@@ -433,3 +433,5 @@ input[type=checkbox] { width: 20px; height: 20px; accent-color: var(--ink); }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition-duration: 1ms !important; }
 }
+/* A head-turn answer lights its arrow for a moment (200 ms): a confirmation, not a distraction. */
+.test-pad button.is-confirm { background: #e8eaec; box-shadow: inset 0 0 0 2px #2b3036; }

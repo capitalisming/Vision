@@ -10,6 +10,7 @@ import { connectPiCamera, normalizePiUrl } from './pi-camera.js';
 import { loadCameraSettings, saveCameraSettings, cameraId, describeCamera } from './camera-source.js';
 import { STEPS, stepStatus, firstOpenStep, nextStep, stepSummary, loadSetup, saveSetup, suggestDistance, NEAR_MM, FAR_MM } from './setup-flow.js';
 import { renderTrend } from './ui-trend.js';
+import { createHeadInput, loadHeadSettings, signsFor } from './head-gesture.js';
 import { renderAction } from './ui-action.js';
 import { toBaselineSessions, latestAction } from './trend-data.js';
 import { whyThisTestElement } from './why-text.js';
@@ -454,6 +455,7 @@ async function loadDistanceModule() {
 async function startTest(v) {
   let getDistance;
   let cameraMod = null;
+  let headInput = null;
   if (v.distanceMode === 'manual') {
     const mm = v.targetMm;
     getDistance = () => ({ mm, ageMs: 0, ok: true, reason: '' });
@@ -467,6 +469,10 @@ async function startTest(v) {
       cameraMod.setParticipant(v.participant);
       await cameraMod.startDistance($('#camera-video'));
       getDistance = () => cameraMod.getDistance(v.participant);
+      // Answers by head turn: only in camera mode, when switched on and trained with this camera in step 3.
+      const head = loadHeadSettings();
+      const signs = head.enabled ? signsFor(head, cameraId(state.camera, location.origin)) : null;
+      if (signs) headInput = createHeadInput(cameraMod.getHeadLandmarks, signs);
     } catch (err) {
       stopCamera();
       const ui = await import('./camera-screen.js');
@@ -484,6 +490,7 @@ async function startTest(v) {
       participant: v.participant, eye: v.eye, glasses: v.glasses, condition: v.condition,
       targetMm: v.targetMm, getDistance, pxPerMm: v.pxPerMm, container: $('#test-root'),
       distanceMode: v.distanceMode,
+      ...(headInput ? { headInput } : {}),
     });
   } catch (err) {
     state.testRunning = false;
@@ -575,8 +582,14 @@ async function mountDistanceStep() {
   } catch {
     label = 'Raspberry Pi (address needed)';
   }
+  let camId = '';
+  try {
+    camId = cameraId(state.camera, location.origin);
+  } catch {
+    // invalid Pi address: the head training waits for a camera that works
+  }
   ui.mountCameraStep(embed, {
-    distance, error, participant,
+    distance, error, participant, cameraId: camId,
     source: { settings: state.camera, label },
     onSourceChange: applyCameraSettings,
     onCalibrated: refreshWizard,

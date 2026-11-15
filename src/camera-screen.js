@@ -5,6 +5,9 @@
 // key, same CSV).
 import { toCsv } from './camera-calib.js';
 import { isLowPowerDevice } from './distance.js';
+import {
+  headPose, createHeadTraining, loadHeadSettings, saveHeadSettings, signsFor, withSigns,
+} from './head-gesture.js';
 
 const ROWS_KEY = 'distance_check_rows';
 const DEFAULT_KNOWN_MM = 500;
@@ -34,6 +37,34 @@ const METHOD_TEXT = {
   auto: 'Calibrated automatically. The distance is an estimate and can be off by up to about 20%. '
     + 'For a precise distance, check once with a tape below.',
 };
+
+// The head-turn practice in step 3 (createHeadTraining states and hints), in plain words.
+const HEAD_TRAINING_TEXT = {
+  up: 'Practice 1 of 2: look at the screen, then tilt your head up (chin up) and hold it for a moment.',
+  center: 'Good. Now look straight at the screen again.',
+  left: 'Practice 2 of 2: turn your head to your left and hold it for a moment.',
+};
+const HEAD_HINT_TEXT = {
+  no_face: 'No face found. Look at the screen.',
+  only_up_down: 'Move your head only up, not to the side.',
+  only_sideways: 'Turn your head only to the side, not up or down.',
+};
+
+/** What step 3 says about answers by head turn. */
+export function headStatusText({ enabled, trained, training = null, camera = true }) {
+  if (!enabled) return '';
+  if (!camera) return 'Head answers need the camera.';
+  if (training) {
+    if (training.hint) return HEAD_HINT_TEXT[training.hint] ?? training.hint;
+    return HEAD_TRAINING_TEXT[training.state] ?? '';
+  }
+  if (trained) {
+    return 'On: in the test, turn your head toward the gap in the ring and hold it for a moment. '
+      + 'The arrow keys and buttons still work.';
+  }
+  return 'Practise once with this camera before the test, so the app knows which way your head moves. '
+    + 'Until then the test uses the arrows.';
+}
 
 export function describeReason(reason) {
   return REASON_TEXT[reason] ?? String(reason);
@@ -139,9 +170,10 @@ export function unmountCameraStep(container) {
  *   called with another camera (or the same one, to try again); returns '' or a message
  * @param {(calibrated: boolean) => void} [o.onCalibrated]  called when the calibration state changes
  * @param {() => void} [o.onCameraOff]  called when the user turns the camera off
+ * @param {string} [o.cameraId]  the camera in use (src/camera-source.js cameraId); head-turn practice is per camera
  */
 export function mountCameraStep(container, {
-  distance, error = '', participant, source, onSourceChange, onCalibrated, onCameraOff,
+  distance, error = '', participant, source, onSourceChange, onCalibrated, onCameraOff, cameraId = '',
 }) {
   const gen = ++generation;
   activeDistance = distance;
@@ -187,6 +219,12 @@ export function mountCameraStep(container, {
             <button type="button" class="small" data-act="calibrate" disabled>Calibrate</button>
           </div>
         </details>
+      </div>
+
+      <div class="cam-head">
+        <label class="check"><input type="checkbox" name="headAnswers"> Answer by turning the head</label>
+        <p class="hint cam-head-status" role="status"></p>
+        <div class="row"><button type="button" class="small" data-act="head-train" hidden>Practise</button></div>
       </div>
 
       <details class="more cam-study">
@@ -342,6 +380,52 @@ export function mountCameraStep(container, {
     flash = { text: '', until: 0 };
   });
 
+  // ----- answers by head turn: a switch, and a short practice that finds which way the head moves on this camera
+  const headBox = input('headAnswers');
+  const headStatus = q('.cam-head-status');
+  const headTrainBtn = q('[data-act=head-train]');
+  let headSettings = loadHeadSettings();
+  let training = null; // createHeadTraining() while practising
+  let trainingReport = null;
+  let headFlash = { text: '', until: 0 };
+  headBox.checked = headSettings.enabled;
+  headBox.disabled = !distance;
+  const startTraining = () => {
+    training = createHeadTraining();
+    trainingReport = { state: training.state, hint: '' };
+    headFlash = { text: '', until: 0 };
+  };
+  headBox.addEventListener('change', () => {
+    headSettings = { ...headSettings, enabled: headBox.checked };
+    saveHeadSettings(headSettings);
+    if (headBox.checked && !signsFor(headSettings, cameraId)) startTraining();
+    if (!headBox.checked) training = null;
+  });
+  headTrainBtn.addEventListener('click', startTraining);
+  function headTick(running) {
+    if (training && running) {
+      const lm = distance.getHeadLandmarks?.() ?? null;
+      trainingReport = training.update(headPose(lm), lm?.t ?? performance.now());
+      if (trainingReport.state === 'done') {
+        headSettings = withSigns(headSettings, cameraId, trainingReport.signs);
+        saveHeadSettings(headSettings);
+        training = null;
+        const flipped = trainingReport.signs.x === -1 || trainingReport.signs.y === -1;
+        headFlash = {
+          text: `Practice done. Head answers are on for this camera.${flipped
+            ? ' This camera shows the head the other way round; that is taken into account.' : ''}`,
+          until: Date.now() + 5000,
+        };
+      }
+    }
+    const trained = Boolean(signsFor(headSettings, cameraId));
+    const text = headFlash.until > Date.now() && headSettings.enabled ? headFlash.text
+      : headStatusText({ enabled: headSettings.enabled, trained, training: training && trainingReport, camera: running });
+    set(headStatus, 'textContent', text);
+    headTrainBtn.hidden = !headSettings.enabled || Boolean(training) || !running;
+    set(headTrainBtn, 'textContent', trained ? 'Practise again' : 'Practise');
+  }
+
   // ----- live view: one pass per frame, text only when it changes
   const set = (el, prop, value) => { if (el[prop] !== value) el[prop] = value; };
   let wasCalibrated = null;
@@ -349,6 +433,7 @@ export function mountCameraStep(container, {
   function tick() {
     if (!live()) return;
     requestAnimationFrame(tick);
+    headTick(started);
     if (!started) {
       progress.hidden = true;
       if (!distance || !alertBox.hidden || view.classList.contains('is-paused')) {
