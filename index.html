@@ -132,10 +132,8 @@
               <span class="wz-n">3</span><span class="wz-title">Distance</span><span class="wz-sum"></span>
             </button>
             <div class="wz-body">
-              <div class="seg">
-                <label><input type="radio" name="distanceMode" form="setup-form" value="manual" checked><span>Tape measure</span></label>
-                <label><input type="radio" name="distanceMode" form="setup-form" value="camera"><span>Camera</span></label>
-              </div>
+              <!-- The distance is always measured by the camera; a tape check is inside the camera step. -->
+              <input type="hidden" name="distanceMode" form="setup-form" value="camera">
               <div data-role="camera-embed"></div>
               <fieldset class="field"><legend class="label">How far from the screen</legend>
                 <div class="seg">

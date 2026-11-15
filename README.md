@@ -58,10 +58,9 @@ with a moving test pattern as the camera.
 1. **You.** Participant code (never a name), which eye, and whether glasses are on.
 2. **Screen.** Done once: hold a bank card against the screen and match the outline, so the app knows the size
    of a millimetre. Then check a 100 mm bar with a ruler.
-3. **Distance.** *Near · 40 cm* (the default when the screen is sharp enough), *Far · 1 m*, or any other distance. It can be measured in two
-   ways:
-   - **Tape measure:** you type the distance.
-   - **Camera:** choosing it asks the browser for the camera, and the list above the picture shows every camera
+3. **Distance.** *Near · 40 cm* (the default when the screen is sharp enough), *Far · 1 m*, or any other distance.
+   The distance is measured by the camera (a tape is used only to check the camera calibration, below):
+   - Opening the step asks the browser for the camera, and the list above the picture shows every camera
      of the device (and *Raspberry Pi over the network*). *Turn camera off* stops it.
      The calibration is automatic: look at the screen and hold still for about two seconds. The app measures
      the distance between your outer eye corners in mm, using the iris (11.7 mm across in adults) as the ruler.
@@ -71,7 +70,7 @@ with a moving test pattern as the camera.
      camera, so later automatic calibrations with it are precise too. Each camera has its own calibration.
 
 During the test, answer with the arrow keys, or tap or click the arrows on screen. Esc or *Stop* ends the test.
-In camera mode the camera is shown small above the ring, and says when it does not see the face.
+The camera is shown small above the ring, and says when it does not see the face.
 
 **Progress** shows the advice for the newest test and the trend against the personal baseline. **History**
 lists every test and exports `sessions.csv` and `trials.csv`.
@@ -87,7 +86,7 @@ A Raspberry Pi 4 can supply the camera; see [pi/README.md](pi/README.md).
   - the screen cannot draw the next level (`floor_hit`);
   - level 1.3 is failed (`worse_than_1.3`);
   - the camera loses the face for five trials in a row (`aborted_camera`);
-  - camera mode is chosen but there is no calibration for that participant and camera (the test does not start).
+  - there is no camera calibration for that participant and camera (the test does not start).
 - **Personal baseline.** Built from the first five measured tests with the same participant, eye, glasses and
   distance. The band is the prediction interval mean ± t(0.975, 4) · sd · √(1 + 1/5), and never narrower than
   ±0.10 logMAR.

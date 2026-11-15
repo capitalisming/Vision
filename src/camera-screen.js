@@ -75,7 +75,7 @@ export function cameraErrorText(err, { lowPower = isLowPowerDevice() } = {}) {
   }
   if (name === 'NotSupportedError') return `${err.message} Use a current Chrome, Chromium, Edge, Firefox or Safari.`;
   if (name === 'FaceTrackerError') {
-    return `${err.message}. The tape measure mode still works.`
+    return `${err.message}. Reload the page and try again, or use another browser.`
       + pi('On a Raspberry Pi, close other tabs to free memory and try again.');
   }
   return err?.message || 'The camera could not be started.';

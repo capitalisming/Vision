@@ -90,7 +90,7 @@ function fmtLogmar(s) {
   return '—';
 }
 
-// The form calls manual mode "Tape"; the stored value stays 'manual'.
+// Older sessions may be in manual (tape) mode; new tests always use the camera.
 const MODE_TEXT = { manual: 'tape', camera: 'camera' };
 
 // Colour of the outcome text; anything not listed is a session without a result.
@@ -259,7 +259,7 @@ function validateSetup(v, pxPerMm) {
   if (!['yes', 'no'].includes(v.glasses)) errs.push('Choose glasses on or off.');
   if (!v.condition || v.condition.length > 40 || /[\r\n]/.test(v.condition)) errs.push('Condition label is required (max 40 characters).');
   if (!Number.isInteger(v.targetMm) || v.targetMm < 200 || v.targetMm > 6000) errs.push('Distance must be a whole number of mm between 200 and 6000.');
-  if (!['manual', 'camera'].includes(v.distanceMode)) errs.push('Choose how the distance is measured.');
+  if (v.distanceMode !== 'camera') errs.push('The distance is measured by the camera.');
   return errs;
 }
 
@@ -344,8 +344,7 @@ function refreshWizard() {
   const blocked = startBlocker(d);
   $('[data-role=start]').disabled = Boolean(blocked);
   $('[data-role=start-blocked]').textContent = blocked;
-  $('[data-role=distance-label]').textContent = d.distanceMode === 'camera'
-    ? 'Distance to sit at, mm' : 'Distance to the screen, mm (measure it with a tape)';
+  $('[data-role=distance-label]').textContent = 'Distance to sit at, mm';
 }
 
 function openStep(step, { scroll = false } = {}) {
@@ -369,7 +368,7 @@ function prefillSetup() {
     if (saved[name] !== '') wizard.querySelector(`[name=${name}]`).value = saved[name];
   }
   state.distanceChosen = true; // the last test's distance; keeps the baseline conditions the same
-  for (const name of ['eye', 'glasses', 'distanceMode']) {
+  for (const name of ['eye', 'glasses']) { // the distance mode is always the camera now
     const radio = saved[name] && wizard.querySelector(`[name=${name}][value=${saved[name]}]`);
     if (radio) radio.checked = true;
   }
@@ -390,8 +389,7 @@ function enterSetup() {
     if (state.screen === 'screen-setup') openStep(firstOpenStep(stepStatus(setupData()), requested));
   };
   // Whether the camera is calibrated is known only to src/distance.js; load it before choosing the step.
-  if (wizard.querySelector('[name=distanceMode]:checked').value === 'camera') prepareCamera().then(open, open);
-  else open();
+  prepareCamera().then(open, open);
 }
 
 wizard.addEventListener('click', (e) => {
@@ -412,7 +410,6 @@ wizard.addEventListener('input', (e) => {
 });
 
 wizard.addEventListener('change', (e) => {
-  if (e.target.name === 'distanceMode' && openedStep === 'distance') mountDistanceStep();
   if (e.target.name === 'distancePreset') state.distanceChosen = true;
   if (e.target.name === 'distancePreset' && e.target.value !== 'custom') {
     $('[name=targetMm]').value = e.target.value;
@@ -451,7 +448,7 @@ async function loadDistanceModule() {
   try {
     mod = await import('./distance.js');
   } catch (err) {
-    throw new Error(`Camera mode is not available: src/distance.js could not be loaded (${err.message}). Use manual mode.`);
+    throw new Error(`Camera mode is not available: src/distance.js could not be loaded (${err.message}).`);
   }
   state.distance = mod;
   return mod;
@@ -461,28 +458,23 @@ async function startTest(v) {
   let getDistance;
   let cameraMod = null;
   let camera = null;
-  if (v.distanceMode === 'manual') {
-    const mm = v.targetMm;
-    getDistance = () => ({ mm, ageMs: 0, ok: true, reason: '' });
-  } else {
-    try {
-      cameraMod = await prepareCamera();
-      if (!cameraMod.getK(v.participant)) {
-        throw new Error(`There is no distance calibration for ${v.participant} with ${describeCamera(state.camera, location.origin)}. ` +
-          'Calibrate on the Camera screen first.');
-      }
-      cameraMod.setParticipant(v.participant);
-      await cameraMod.startDistance($('#camera-video'));
-      getDistance = () => cameraMod.getDistance(v.participant);
-      // The camera is shown small above the ring, with what is wrong with it right now.
-      const ui = await import('./camera-screen.js');
-      camera = { video: $('#camera-video'), status: () => ui.testCameraStatus(cameraMod.getDistance(v.participant)) };
-    } catch (err) {
-      stopCamera();
-      const ui = await import('./camera-screen.js');
-      showError(ui.cameraErrorText(err)); // Failure D: no camera data, no test, no number.
-      return;
+  try {
+    cameraMod = await prepareCamera();
+    if (!cameraMod.getK(v.participant)) {
+      throw new Error(`There is no distance calibration for ${v.participant} with ${describeCamera(state.camera, location.origin)}. ` +
+        'Calibrate on the Camera screen first.');
     }
+    cameraMod.setParticipant(v.participant);
+    await cameraMod.startDistance($('#camera-video'));
+    getDistance = () => cameraMod.getDistance(v.participant);
+    // The camera is shown small above the ring, with what is wrong with it right now.
+    const ui = await import('./camera-screen.js');
+    camera = { video: $('#camera-video'), status: () => ui.testCameraStatus(cameraMod.getDistance(v.participant)) };
+  } catch (err) {
+    stopCamera();
+    const ui = await import('./camera-screen.js');
+    showError(ui.cameraErrorText(err)); // Failure D: no camera data, no test, no number.
+    return;
   }
 
   show('screen-test');
@@ -564,10 +556,6 @@ async function mountDistanceStep() {
   leaveDistanceStep();
   const token = cameraMountToken;
   const embed = $('[data-role=camera-embed]');
-  if (wizard.querySelector('[name=distanceMode]:checked').value !== 'camera') {
-    refreshWizard();
-    return;
-  }
   const code = readForm().participant;
   const participant = CODE_RE.test(code) ? code : '';
   let distance = null;
