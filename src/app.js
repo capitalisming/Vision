@@ -13,7 +13,7 @@ import { renderTrend } from './ui-trend.js';
 import { renderAction } from './ui-action.js';
 import { toBaselineSessions, latestAction } from './trend-data.js';
 import { whyThisTestElement } from './why-text.js';
-import { listSessions, saveSession, deleteSession, exportCsv, exportJson, importJson } from './storage.js';
+import { listSessions, saveSession, deleteSession, deleteAllSessions, exportCsv, exportJson, importJson } from './storage.js';
 
 const state = {
   screen: 'screen-home',
@@ -153,6 +153,7 @@ function renderLog() {
     showError(err.message);
     return;
   }
+  $('[data-action=delete-all]').hidden = !sessions.length;
   if (!sessions.length) {
     const td = tbody.insertRow().insertCell();
     td.colSpan = 7;
@@ -215,6 +216,20 @@ $('[data-action=export-csv]').addEventListener('click', () => {
 });
 $('[data-action=export-json]').addEventListener('click', () => {
   download(`sessions-${stamp()}.json`, exportJson(), 'application/json');
+});
+$('[data-action=delete-all]').addEventListener('click', () => {
+  const n = readSessions().length;
+  if (!n) return;
+  const what = n === 1 ? '1 test' : `all ${n} tests`;
+  if (!confirm(`Delete ${what} from this browser? This cannot be undone. Export CSV or JSON first to keep a copy.`)) return;
+  try {
+    deleteAllSessions();
+    $('.io-status').textContent = `Deleted ${n === 1 ? '1 test' : `${n} tests`}.`;
+  } catch (err) {
+    showError(err.message);
+  }
+  renderLog();
+  renderHome();
 });
 $('[data-action=import-json]').addEventListener('change', async (e) => {
   const file = e.target.files?.[0];
