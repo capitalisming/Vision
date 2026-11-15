@@ -77,3 +77,13 @@ test('near (40 cm) is suggested only when the screen can show good near vision t
   assert.equal(suggestDistance(() => null), 1000);
   assert.equal(suggestDistance((mm) => (mm === 400 ? -0.1 : 0.5)), 400, 'only the 40 cm limit decides');
 });
+
+test('start is blocked until the screen, and in camera mode the camera, is calibrated', async () => {
+  const { startBlocker } = await import('../src/setup-flow.js');
+  const ok = { hasScreen: true, zoomChanged: false, distanceMode: 'manual', cameraCalibrated: false };
+  assert.equal(startBlocker(ok), '');
+  assert.match(startBlocker({ ...ok, hasScreen: false }), /Calibrate the screen in step 2/);
+  assert.match(startBlocker({ ...ok, zoomChanged: true }), /zoom changed/);
+  assert.match(startBlocker({ ...ok, distanceMode: 'camera' }), /Calibrate the camera in step 3/);
+  assert.equal(startBlocker({ ...ok, distanceMode: 'camera', cameraCalibrated: true }), '');
+});

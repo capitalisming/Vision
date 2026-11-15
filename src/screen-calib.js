@@ -43,6 +43,15 @@ export function calibrationDprChanged() {
 }
 
 /**
+ * The largest outline width that fits in `availablePx` (the inside of the card area), within the allowed range.
+ * Returns MAX_WIDTH_PX when the space is unknown (0 or not a number).
+ */
+export function maxFittingWidth(availablePx) {
+  if (!(availablePx > 0)) return MAX_WIDTH_PX;
+  return Math.max(MIN_WIDTH_PX, Math.min(MAX_WIDTH_PX, Math.floor(availablePx * 2) / 2)); // 0.5 px steps
+}
+
+/**
  * Render the calibration UI into `root`.
  * @param {HTMLElement} root
  * @param {{onSaved?: (pxPerMm:number) => void}} [opts]
@@ -55,8 +64,7 @@ export function mountScreenCalibration(root, opts = {}) {
     <div class="calib">
       <p class="hint">Keep browser zoom at 100%. Hold a bank card flat against the screen and resize the outline
         until it matches the card edges exactly. Then press Save.</p>
-      <div class="calib-stage"><div class="card-rect" aria-label="Card outline"></div></div>
-      <div class="panel">
+      <div class="panel calib-panel">
         <div class="calib-controls">
           <button type="button" data-step="-1" aria-label="Smaller">−</button>
           <input type="range" min="${MIN_WIDTH_PX}" max="${MAX_WIDTH_PX}" step="0.5" aria-label="Card width">
@@ -70,6 +78,9 @@ export function mountScreenCalibration(root, opts = {}) {
           <button type="button" class="ghost" data-nav="screen-setup" data-role="next" hidden>Next: new session</button>
         </div>
       </div>
+      <div class="calib-stage"><div class="card-rect" aria-label="Card outline"></div></div>
+      <p class="hint calib-fit" hidden>The outline cannot be larger in this window. If the card is still bigger,
+        turn the device sideways or make the window wider.</p>
       <div class="panel">
         <h2>Check with a ruler</h2>
         <p class="hint ruler-hint"></p>
@@ -86,9 +97,21 @@ export function mountScreenCalibration(root, opts = {}) {
   const rulerLabel = root.querySelector('.ruler-label');
   const rulerHint = root.querySelector('.ruler-hint');
   const rulerWrap = root.querySelector('.ruler-wrap');
+  const stage = root.querySelector('.calib-stage');
+  const fitHint = root.querySelector('.calib-fit');
+
+  // The outline never gets wider than its area: on a small screen it would go past the edge.
+  function maxWidth() {
+    const cs = getComputedStyle(stage);
+    const inner = stage.clientWidth - parseFloat(cs.paddingLeft || '0') - parseFloat(cs.paddingRight || '0');
+    return maxFittingWidth(inner);
+  }
 
   function render() {
-    width = Math.min(MAX_WIDTH_PX, Math.max(MIN_WIDTH_PX, width));
+    const max = maxWidth();
+    slider.max = String(max);
+    width = Math.min(max, Math.max(MIN_WIDTH_PX, width));
+    fitHint.hidden = width < max || max >= MAX_WIDTH_PX;
     rect.style.width = `${width}px`;
     rect.style.height = `${width * CARD_HEIGHT_MM / CARD_WIDTH_MM}px`;
     slider.value = String(width);
@@ -144,4 +167,9 @@ export function mountScreenCalibration(root, opts = {}) {
 
   render();
   root.focus({ preventScroll: true });
+  // A narrower window (or the device turned) gives the outline less room.
+  if (typeof ResizeObserver === 'function') {
+    const ro = new ResizeObserver(() => { if (root.isConnected) render(); else ro.disconnect(); });
+    ro.observe(stage);
+  }
 }

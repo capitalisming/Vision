@@ -128,3 +128,12 @@ test('corrupt storage is reported, never overwritten', () => {
   assert.throws(() => listSessions(), /not valid JSON/);
   assert.equal(mem.get(STORAGE_KEY), '{oops');
 });
+
+test('delete all removes every session and reports how many there were', async () => {
+  const { deleteAllSessions } = await import('../src/storage.js');
+  assert.equal(deleteAllSessions(), 0);
+  saveSession(await makeSession(0));
+  saveSession(await makeSession(1));
+  assert.equal(deleteAllSessions(), 2);
+  assert.deepEqual(listSessions(), []);
+});

@@ -30,6 +30,17 @@ export function stepStatus(d) {
   };
 }
 
+/**
+ * Why the test cannot start yet: the screen (and in camera mode the camera) must be calibrated. '' when it can.
+ * Other missing fields are listed when Start is pressed.
+ */
+export function startBlocker(d) {
+  if (!d.hasScreen) return 'Calibrate the screen in step 2 before the test.';
+  if (d.zoomChanged) return 'Browser zoom changed since the screen calibration: calibrate the screen again in step 2.';
+  if (d.distanceMode === 'camera' && !d.cameraCalibrated) return 'Calibrate the camera in step 3 before the test.';
+  return '';
+}
+
 export const NEAR_MM = 400;
 export const FAR_MM = 1000;
 const GOOD_NEAR_LOGMAR = -0.1; // good young eyes often reach this; the screen must draw it to give them a number

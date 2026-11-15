@@ -58,10 +58,9 @@ with a moving test pattern as the camera.
 1. **You.** Participant code (never a name), which eye, and whether glasses are on.
 2. **Screen.** Done once: hold a bank card against the screen and match the outline, so the app knows the size
    of a millimetre. Then check a 100 mm bar with a ruler.
-3. **Distance.** *Near · 40 cm* (the default when the screen is sharp enough), *Far · 1 m*, or any other distance. It can be measured in two
-   ways:
-   - **Tape measure:** you type the distance.
-   - **Camera:** choosing it asks the browser for the camera, and the list above the picture shows every camera
+3. **Distance.** *Near · 40 cm* (the default when the screen is sharp enough), *Far · 1 m*, or any other distance.
+   The distance is measured by the camera (a tape is used only to check the camera calibration, below):
+   - Opening the step asks the browser for the camera, and the list above the picture shows every camera
      of the device (and *Raspberry Pi over the network*). *Turn camera off* stops it.
      The calibration is automatic: look at the screen and hold still for about two seconds. The app measures
      the distance between your outer eye corners in mm, using the iris (11.7 mm across in adults) as the ruler.
@@ -71,24 +70,11 @@ with a moving test pattern as the camera.
      camera, so later automatic calibrations with it are precise too. Each camera has its own calibration.
 
 During the test, answer with the arrow keys, or tap or click the arrows on screen. Esc or *Stop* ends the test.
-
-**Answer by turning the head** (camera mode, on by default; a switch in step 3 turns it off). Turn the head
-toward the gap (chin up, chin down, to your left, to your right), hold it for about 0.2 s, then look straight
-again; the arrow that was chosen lights up briefly. During the test the camera is shown small above the ring;
-when it does not see the face it says so. **If you cannot turn your head, or the camera does not work, answer
-with the arrows**: they always work. The first time a camera sees a face in step 3, a short practice (head up,
-then to the left) starts by itself and finds which way each axis goes on that camera; a mirrored camera is
-handled by itself. It can be skipped: then the directions of the raw camera picture are used and the session
-notes say so.
-Only head turns are used, not eye movements: gaze cannot be read reliably from a webcam at 40 cm – 1 m, and
-looking away from the sign would break fixation. The distance is still confirmed when each sign is shown and
-checked until the head starts to move; from then to the end of that trial it is not (turning the head changes
-the eye span the distance is read from). Before the next sign the app waits for the head to come back and the
-distance to be valid again; this wait is not an invalid trial. The session notes say how many answers were
-given by head turn. **Head answers have not been tested on real faces yet.**
+The camera is shown small above the ring, and says when it does not see the face.
 
 **Progress** shows the advice for the newest test and the trend against the personal baseline. **History**
-lists every test and exports `sessions.csv` and `trials.csv`.
+lists every test and exports `sessions.csv` and `trials.csv`. A test can be deleted with *Delete* on its row, or
+the whole history with *Delete all* (it asks first; export a copy before).
 
 A Raspberry Pi 4 can supply the camera; see [pi/README.md](pi/README.md).
 
@@ -97,12 +83,11 @@ A Raspberry Pi 4 can supply the camera; see [pi/README.md](pi/README.md).
 - **Test procedure.** First a fast descent from logMAR 1.3, one sign per level. Then five signs per level in
   0.1 steps, until fewer than three of five are correct. The score is
   logMAR = first main level + 0.1 − 0.02 × correct answers.
-- **No number without trust.** Every counted sign is shown only at a confirmed distance. The test gives no
-  score when:
+- **No number without trust.** The test gives no score when:
   - the screen cannot draw the next level (`floor_hit`);
   - level 1.3 is failed (`worse_than_1.3`);
   - the camera loses the face for five trials in a row (`aborted_camera`);
-  - camera mode is chosen but there is no calibration for that participant and camera (the test does not start).
+  - there is no camera calibration for that participant and camera (the test does not start).
 - **Personal baseline.** Built from the first five measured tests with the same participant, eye, glasses and
   distance. The band is the prediction interval mean ± t(0.975, 4) · sd · √(1 + 1/5), and never narrower than
   ±0.10 logMAR.
@@ -149,7 +134,6 @@ npm run test:pi        # Raspberry Pi camera server (Python)
 | `src/setup-flow.js` | Rules of the three-step Test flow |
 | `src/screen-calib.js`, `src/optotype.js`, `src/acuity-test.js`, `src/storage.js` | Screen calibration, ring sizing, test procedure, sessions and export |
 | `src/distance.js`, `src/camera-screen.js`, `src/camera-calib.js` | Distance from the camera (MediaPipe), camera step, Experiment 3 recorder |
-| `src/head-gesture.js` | Answers by head turn: detector, practice, settings |
 | `src/baseline.js`, `src/trend-data.js`, `src/ui-trend.js`, `src/ui-action.js` | Personal baseline, trend chart, advice |
 | `src/pi-camera.js`, `src/camera-source.js`, `pi/` | Raspberry Pi camera |
 | `src/iris.js`, `src/home-scroll.js` | Home screen visuals |

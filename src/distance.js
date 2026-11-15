@@ -9,7 +9,6 @@ export const MAX_HEAD_TURN_DEG = 15;
 // Outer eye corners in the 478-point face mesh (subject's left / right).
 const LEFT_OUTER = 263;
 const RIGHT_OUTER = 33;
-const NOSE_TIP = 1;
 // Iris contour points (only in the 478-point mesh), as opposite pairs: two diameters per eye.
 const IRIS_DIAMETERS = [[469, 471], [470, 472], [474, 476], [475, 477]];
 
@@ -36,7 +35,6 @@ const state = {
   lastValidAt: null, // performance.now() of the last valid frame
   frameReason: 'no_face', // null when the latest processed frame was valid
   corners: [], // [{ left: {x,y}, right: {x,y} }] per face, video pixels
-  head: null, // { nose, left, right, t } of the latest frame with exactly one face, video pixels; else null
   participant: null,
 };
 
@@ -69,19 +67,18 @@ export function irisDiameterPx(lm, videoWidth, videoHeight) {
   return d > 0 ? d : null;
 }
 
-// Pure per-frame evaluation: { reason, spanPx, irisPx, corners, head }.
-// head: nose tip and outer eye corners of the one face in the raw (not mirrored) picture, in video pixels, also
-// when the head is turned (that is what an answer by head turn looks like); null unless there is exactly one face.
+// Pure per-frame evaluation: { reason, spanPx, irisPx, corners }.
 export function evaluateFrame(result, videoWidth, videoHeight) {
   const faces = result.faceLandmarks || [];
-  const px = (p) => ({ x: p.x * videoWidth, y: p.y * videoHeight });
-  const corners = faces.map((lm) => ({ left: px(lm[LEFT_OUTER]), right: px(lm[RIGHT_OUTER]) }));
-  if (faces.length === 0) return { reason: 'no_face', spanPx: null, irisPx: null, corners, head: null };
-  if (faces.length > 1) return { reason: 'two_faces', spanPx: null, irisPx: null, corners, head: null };
-  const head = faces[0][NOSE_TIP] ? { nose: px(faces[0][NOSE_TIP]), ...corners[0] } : null;
+  const corners = faces.map((lm) => ({
+    left: { x: lm[LEFT_OUTER].x * videoWidth, y: lm[LEFT_OUTER].y * videoHeight },
+    right: { x: lm[RIGHT_OUTER].x * videoWidth, y: lm[RIGHT_OUTER].y * videoHeight },
+  }));
+  if (faces.length === 0) return { reason: 'no_face', spanPx: null, irisPx: null, corners };
+  if (faces.length > 1) return { reason: 'two_faces', spanPx: null, irisPx: null, corners };
   const matrix = (result.facialTransformationMatrixes || [])[0];
   if (matrix && headTurnDeg(matrix) > MAX_HEAD_TURN_DEG) {
-    return { reason: 'head_turned', spanPx: null, irisPx: null, corners, head };
+    return { reason: 'head_turned', spanPx: null, irisPx: null, corners };
   }
   const { left, right } = corners[0];
   return {
@@ -89,7 +86,6 @@ export function evaluateFrame(result, videoWidth, videoHeight) {
     spanPx: Math.hypot(left.x - right.x, left.y - right.y),
     irisPx: irisDiameterPx(faces[0], videoWidth, videoHeight),
     corners,
-    head,
   };
 }
 
@@ -103,7 +99,6 @@ function prune(now) {
 function processFrame(result, now) {
   const f = evaluateFrame(result, state.video.videoWidth, state.video.videoHeight);
   state.corners = f.corners;
-  state.head = f.head ? { ...f.head, t: now } : null;
   state.frameReason = f.reason;
   if (f.reason === null) {
     state.samples.push({ t: now, span: f.spanPx });
@@ -269,7 +264,6 @@ export function stopDistance() {
   state.lastValidAt = null;
   state.frameReason = 'no_face';
   state.corners = [];
-  state.head = null;
 }
 
 const kKey = (participant) => (cameraId ? `cam_k_${participant}@${cameraId}` : `cam_k_${participant}`);
@@ -310,15 +304,6 @@ export function setParticipant(participant) {
 // Outer eye corners of every face in the latest processed frame, in video pixels: [{ left, right }].
 export function getEyeCorners() {
   return state.corners;
-}
-
-/**
- * Nose tip (point 1) and outer eye corners (left = 263, right = 33, the subject's) of the latest processed frame,
- * raw picture, video pixels, with t = the frame time (performance.now()): { nose, left, right, t }. null when
- * there is not exactly one face. For answers by head turn (src/head-gesture.js).
- */
-export function getHeadLandmarks() {
-  return state.head;
 }
 
 // { mm, ageMs, ok, reason, eyeSpanPx }. eyeSpanPx is the 0.5 s median; mm is

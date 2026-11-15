@@ -94,6 +94,13 @@ export function deleteSession(id) {
   return true;
 }
 
+/** Delete every stored session. Returns how many there were. */
+export function deleteAllSessions() {
+  const n = readAll().length;
+  writeAll([]);
+  return n;
+}
+
 function csvCell(v) {
   if (v === null || v === undefined) return '';
   let s;

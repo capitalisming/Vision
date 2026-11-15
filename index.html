@@ -132,10 +132,8 @@
               <span class="wz-n">3</span><span class="wz-title">Distance</span><span class="wz-sum"></span>
             </button>
             <div class="wz-body">
-              <div class="seg">
-                <label><input type="radio" name="distanceMode" form="setup-form" value="manual" checked><span>Tape measure</span></label>
-                <label><input type="radio" name="distanceMode" form="setup-form" value="camera"><span>Camera</span></label>
-              </div>
+              <!-- The distance is always measured by the camera; a tape check is inside the camera step. -->
+              <input type="hidden" name="distanceMode" form="setup-form" value="camera">
               <div data-role="camera-embed"></div>
               <fieldset class="field"><legend class="label">How far from the screen</legend>
                 <div class="seg">
@@ -156,7 +154,8 @@
 
         <div class="wz-footer">
           <ul class="form-errors" role="alert"></ul>
-          <button type="submit" form="setup-form" class="primary large">Start test</button>
+          <button type="submit" form="setup-form" class="primary large" data-role="start">Start test</button>
+          <p class="start-blocked" data-role="start-blocked" role="status"></p>
           <p class="hint">The test opens on a white screen. Answer with the arrow keys, or tap the arrows on the screen.</p>
         </div>
       </div>
@@ -187,6 +186,7 @@
         <button type="button" class="small" data-action="export-csv">Export CSV</button>
         <button type="button" class="small" data-action="export-json">Export JSON</button>
         <label class="file-button small">Import JSON<input type="file" accept="application/json,.json" data-action="import-json" class="sr-only"></label>
+        <button type="button" class="small ghost danger" data-action="delete-all">Delete all</button>
       </div>
       <p class="io-status" role="status"></p>
       <table class="sessions">

@@ -255,7 +255,7 @@ details.more[open] > summary { margin-bottom: -8px; }
 
 /* ---------- screen calibration ---------- */
 .calib { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
-.calib-stage { overflow-x: auto; padding: 32px 24px; border-radius: 20px; box-shadow: inset 0 0 0 1px var(--line); }
+.calib-stage { overflow: hidden; padding: 32px 24px; border-radius: 20px; box-shadow: inset 0 0 0 1px var(--line); }
 /* The outer edge is what the card is aligned to: a crisp 2px line, nothing outside it. */
 .card-rect { border: 2px solid var(--ink); border-radius: 3.18mm; background: rgb(255 255 255 / 0.03); }
 .panel { padding: 24px; border-radius: 20px; box-shadow: inset 0 0 0 1px var(--line); }
@@ -433,8 +433,6 @@ input[type=checkbox] { width: 20px; height: 20px; accent-color: var(--ink); }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition-duration: 1ms !important; }
 }
-/* A head-turn answer lights its arrow for a moment (200 ms): a confirmation, not a distraction. */
-.test-pad button.is-confirm { background: #e8eaec; box-shadow: inset 0 0 0 2px #2b3036; }
 /* The camera above the ring during a camera-mode test: small, quiet, mirrored like a mirror. */
 .test-cam { display: flex; flex-direction: column; align-items: center; gap: 6px; }
 .test-cam-view { width: 160px; aspect-ratio: 4 / 3; border-radius: 14px; overflow: hidden; background: #000; box-shadow: inset 0 0 0 1px #d6d8db; }
@@ -442,3 +440,9 @@ input[type=checkbox] { width: 20px; height: 20px; accent-color: var(--ink); }
 .test-cam-status { margin: 0; min-height: 1.25em; font-size: 0.8125rem; color: #6b7078; text-align: center; max-width: 320px; }
 .test-cam.is-warn .test-cam-view { box-shadow: inset 0 0 0 2px #b26a00; }
 .test-cam.is-warn .test-cam-status { color: #8a5200; }
+/* Start test stays off until the screen (and in camera mode the camera) is calibrated; this says why. */
+.wz-footer .start-blocked { margin: 0; color: var(--warn); font-size: 0.875rem; }
+.wz-footer .start-blocked:empty { display: none; }
+.wz-footer button[type=submit]:disabled { opacity: 0.45; cursor: not-allowed; }
+/* Delete all: quiet until hovered, like the per-row Delete. */
+button.small.ghost.danger:hover { color: var(--danger); box-shadow: inset 0 0 0 1px var(--danger); }
