@@ -5,7 +5,12 @@
 const VENDOR = new URL('../vendor/', import.meta.url);
 
 export const WINDOW_MS = 500;
+// Only turning the head sideways (yaw) makes the eye span look shorter (by 1 - cos: 3.4% at 15°). Tilting it up or
+// down hardly changes it, and a laptop camera above the screen sees everyone looking at the screen tilted by
+// 10-15°: counting that as "turned" stopped the measurement for many people. So sideways is held to 15°, and the
+// whole angle only to 35°, past which the face points are no longer reliable.
 export const MAX_HEAD_TURN_DEG = 15;
+export const MAX_HEAD_TILT_DEG = 35;
 // Outer eye corners in the 478-point face mesh (subject's left / right).
 const LEFT_OUTER = 263;
 const RIGHT_OUTER = 33;
@@ -18,8 +23,10 @@ const IRIS_DIAMETERS = [[469, 471], [470, 472], [474, 476], [475, 477]];
 // it is taken from a typical webcam field of view, so an automatic calibration is an estimate (see README).
 export const IRIS_MM = 11.7;
 export const DEFAULT_HFOV_DEG = 62; // Pi Camera Module 2: 62.2°, Module 3: 66°, most laptop webcams 55–70°
-export const AUTO_WINDOW_MS = 1500;
-export const AUTO_MIN_SAMPLES = 15;
+// The last AUTO_MIN_SAMPLES good frames in a row are used, however fast the face tracker runs: a fixed time
+// window needed 10+ processed frames a second, which slower laptops never reach, so the calibration never ended.
+export const AUTO_MIN_SAMPLES = 12;
+export const AUTO_MAX_AGE_MS = 5000; // frames older than this are dropped (a stalled tracker starts over)
 export const AUTO_MAX_CV = 0.03; // eye span may vary by 3% while collecting: the head is held still
 const EYE_SPAN_MM_MIN = 70; // outer eye corner distance of adults is about 80–105 mm
 const EYE_SPAN_MM_MAX = 120;
@@ -31,7 +38,7 @@ const state = {
   rafId: 0,
   lastVideoTime: -1,
   samples: [], // { t, span } from valid frames only, last WINDOW_MS
-  calibSamples: [], // { t, span, iris } from valid frames only, last AUTO_WINDOW_MS
+  calibSamples: [], // { t, span, iris }: the last AUTO_MIN_SAMPLES valid frames in a row, none older than AUTO_MAX_AGE_MS
   lastValidAt: null, // performance.now() of the last valid frame
   frameReason: 'no_face', // null when the latest processed frame was valid
   corners: [], // [{ left: {x,y}, right: {x,y} }] per face, video pixels
@@ -56,6 +63,16 @@ export function headTurnDeg(matrix) {
   return (Math.acos(c) * 180) / Math.PI;
 }
 
+// Sideways turn (yaw) in degrees: the sideways part of the face's forward axis. Whether the matrix is stored by
+// rows or by columns, that part is data[2] or data[8]; both are used (the larger), so either layout is covered.
+export function headYawDeg(matrix) {
+  const d = matrix.data;
+  const scale = Math.hypot(d[8], d[9], d[10]);
+  if (!scale) return 90;
+  const s = Math.min(1, Math.max(Math.abs(d[2]), Math.abs(d[8])) / scale);
+  return (Math.asin(s) * 180) / Math.PI;
+}
+
 /** Mean iris diameter in video pixels, or null when the mesh has no iris points. */
 export function irisDiameterPx(lm, videoWidth, videoHeight) {
   if (!lm || lm.length < 478) return null;
@@ -77,7 +94,7 @@ export function evaluateFrame(result, videoWidth, videoHeight) {
   if (faces.length === 0) return { reason: 'no_face', spanPx: null, irisPx: null, corners };
   if (faces.length > 1) return { reason: 'two_faces', spanPx: null, irisPx: null, corners };
   const matrix = (result.facialTransformationMatrixes || [])[0];
-  if (matrix && headTurnDeg(matrix) > MAX_HEAD_TURN_DEG) {
+  if (matrix && (headYawDeg(matrix) > MAX_HEAD_TURN_DEG || headTurnDeg(matrix) > MAX_HEAD_TILT_DEG)) {
     return { reason: 'head_turned', spanPx: null, irisPx: null, corners };
   }
   const { left, right } = corners[0];
@@ -92,8 +109,9 @@ export function evaluateFrame(result, videoWidth, videoHeight) {
 function prune(now) {
   const from = now - WINDOW_MS;
   while (state.samples.length && state.samples[0].t < from) state.samples.shift();
-  const calibFrom = now - AUTO_WINDOW_MS;
+  const calibFrom = now - AUTO_MAX_AGE_MS;
   while (state.calibSamples.length && state.calibSamples[0].t < calibFrom) state.calibSamples.shift();
+  while (state.calibSamples.length > AUTO_MIN_SAMPLES) state.calibSamples.shift();
 }
 
 function processFrame(result, now) {
@@ -143,6 +161,22 @@ async function createLandmarker() {
     console.warn('Face Landmarker: GPU delegate failed, using CPU', gpuError);
     return FaceLandmarker.createFromOptions(fileset, options('CPU'));
   }
+}
+
+// One face tracker for the page, loaded once. Loading it (about 15 MB of wasm and model) can take a while on a
+// slow connection, so the app starts it early (preloadFaceTracker) instead of when the camera is opened.
+let landmarkerPromise = null;
+function getLandmarker() {
+  landmarkerPromise ??= createLandmarker().catch((e) => {
+    landmarkerPromise = null; // let a later attempt try again
+    throw e;
+  });
+  return landmarkerPromise;
+}
+
+/** Start loading the face tracker in the background. Safe to call more than once; errors show up later. */
+export function preloadFaceTracker() {
+  getLandmarker().catch(() => {});
 }
 
 function loop() {
@@ -227,11 +261,14 @@ function releaseStream(videoEl) {
 // Gets the camera into videoEl (through the provider, else the webcam) and starts per-frame processing.
 // Calling it again while videoEl is playing a stream is a no-op; with no stream it starts the camera again.
 // Another video element that was running is stopped first: one camera at a time.
-export async function startDistance(videoEl) {
-  if (state.video === videoEl && videoEl.srcObject) return;
+// onStage(stage) tells what it is waiting for: 'camera' (permission and the stream), 'tracker' (the face tracker
+// is still loading), 'running'.
+export async function startDistance(videoEl, { onStage = () => {} } = {}) {
+  if (state.video === videoEl && videoEl.srcObject) { onStage('running'); return; }
   if (state.video) stopDistance();
   state.video = videoEl;
   state.lastVideoTime = -1;
+  onStage('camera');
   try {
     await (cameraProvider ?? webcam)(videoEl);
     videoEl.muted = true;
@@ -243,7 +280,10 @@ export async function startDistance(videoEl) {
     throw e;
   }
   try {
-    state.landmarker ??= await createLandmarker();
+    if (!state.landmarker) {
+      onStage('tracker');
+      state.landmarker = await getLandmarker();
+    }
   } catch (e) {
     releaseStream(videoEl); // without the face tracker the camera is of no use: let go of it
     state.video = null;
@@ -251,6 +291,7 @@ export async function startDistance(videoEl) {
   }
   if (state.video !== videoEl) return; // stopped while the face tracker was loading
   if (!state.rafId) state.rafId = requestAnimationFrame(loop);
+  onStage('running');
 }
 
 /** Stop the camera and the per-frame processing, and forget the measurements. Safe to call at any time. */
@@ -342,7 +383,7 @@ export function eyeSpanFromIris(samples, { minSamples = AUTO_MIN_SAMPLES, maxCv 
 
 /**
  * Automatic calibration, without a tape: call it once per frame until it returns ok. It needs the face held
- * still for AUTO_WINDOW_MS. k = focal length (px) × eye span (mm), so distance = k / eye span (px) as before.
+ * still for AUTO_MIN_SAMPLES frames (about a second). k = focal length (px) × eye span (mm), so distance = k / eye span (px) as before.
  * @returns {{ok:true, k:number, eyeSpanMm:number, method:string} | {ok:false, reason:string, progress:number}}
  */
 export function autoCalibrateCamera(participant) {

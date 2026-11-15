@@ -55,15 +55,20 @@ with a moving test pattern as the camera.
 
 **Test** is one flow in three steps:
 
-1. **You.** Participant code (never a name), which eye, and whether glasses are on.
+1. **You.** Participant code (never a name), which eye, and whether glasses are on. *Study options* has the
+   condition, chosen from a list (`self_check` by default).
 2. **Screen.** Done once: hold a bank card against the screen and match the outline, so the app knows the size
    of a millimetre. Then check a 100 mm bar with a ruler.
-3. **Distance.** *Near · 40 cm* (the default when the screen is sharp enough), *Far · 1 m*, or any other distance.
-   The distance is measured by the camera (a tape is used only to check the camera calibration, below):
-   - Opening the step asks the browser for the camera, and the list above the picture shows every camera
-     of the device (and *Raspberry Pi over the network*). *Turn camera off* stops it.
-     The calibration is automatic: look at the screen and hold still for about two seconds. The app measures
-     the distance between your outer eye corners in mm, using the iris (11.7 mm across in adults) as the ruler.
+3. **Distance.** The distance is measured by the camera (a tape is used only to check the camera calibration,
+   below). The distance to sit at is suggested from the screen (40 cm when it is sharp enough, else 1 m).
+   - Opening the step asks the browser for the camera, and the list above the picture shows the cameras of this
+     computer. *Turn camera off* stops it. If the camera does not answer within 10 s, the step says what to do.
+     The face tracker starts loading as soon as the Test flow opens, so it is usually ready by step 3.
+   - **The distance is measured every time step 3 opens**: look at the screen and hold still for about a second
+     (12 good frames in a row, however fast the computer is). *Start test* stays off until then. The app
+     measures the distance between your outer eye corners in mm, using the iris (11.7 mm across in adults) as
+     the ruler. Only a sideways head turn over 15° stops it; looking down at the screen from under a laptop
+     camera does not.
      Until the camera has been checked once with a tape, its field of view is assumed (62°), so the distance is
      an estimate that can be off by up to about 20%; the app says so, and the session notes record it.
      *Check with a tape* (sit at 50 cm, press the button) gives the precise calibration and also measures the
@@ -76,7 +81,8 @@ The camera is shown small above the ring, and says when it does not see the face
 lists every test and exports `sessions.csv` and `trials.csv`. *Delete…* puts a tick box on every row: tick one or
 more tests and press *Delete selected*, or press *Delete all*. Both ask first; export a copy before.
 
-A Raspberry Pi 4 can supply the camera; see [pi/README.md](pi/README.md).
+The Raspberry Pi camera server ([pi/README.md](pi/README.md)) is no longer offered in the camera list; the app
+uses this computer's cameras.
 
 ## How it decides
 

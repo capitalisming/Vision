@@ -104,11 +104,15 @@
                 <summary>Study options</summary>
                 <label class="field">
                   <span class="label">Condition</span>
-                  <input name="condition" form="setup-form" maxlength="40" list="condition-list" autocomplete="off" value="self_check">
-                  <datalist id="condition-list">
-                    <option value="practice"><option value="rep"><option value="dose_noglasses">
-                    <option value="dose_glasses"><option value="e2e_glasses"><option value="e2e_noglasses">
-                  </datalist>
+                  <select name="condition" form="setup-form">
+                    <option value="self_check" selected>self_check (your own test)</option>
+                    <option value="practice">practice</option>
+                    <option value="rep">rep</option>
+                    <option value="dose_noglasses">dose_noglasses</option>
+                    <option value="dose_glasses">dose_glasses</option>
+                    <option value="e2e_glasses">e2e_glasses</option>
+                    <option value="e2e_noglasses">e2e_noglasses</option>
+                  </select>
                   <small>Your own tests count toward your baseline. Tests marked practice stay in the history only. The research analysis reads only the study conditions (rep, dose_*).</small>
                 </label>
               </details>
@@ -135,14 +139,6 @@
               <!-- The distance is always measured by the camera; a tape check is inside the camera step. -->
               <input type="hidden" name="distanceMode" form="setup-form" value="camera">
               <div data-role="camera-embed"></div>
-              <fieldset class="field"><legend class="label">How far from the screen</legend>
-                <div class="seg">
-                  <label><input type="radio" name="distancePreset" value="400" checked><span>Near · 40 cm</span></label>
-                  <label><input type="radio" name="distancePreset" value="1000"><span>Far · 1 m</span></label>
-                  <label><input type="radio" name="distancePreset" value="custom"><span>Other</span></label>
-                </div>
-                <small data-role="distance-why"></small>
-              </fieldset>
               <label class="field">
                 <span class="label" data-role="distance-label">Distance to the screen, mm</span>
                 <input name="targetMm" form="setup-form" type="number" min="200" max="6000" step="1" value="400" inputmode="numeric">

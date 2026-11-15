@@ -16,7 +16,7 @@ const REASON_TEXT = {
   two_faces: 'More than one face in view.',
   head_turned: 'Turn your head toward the camera.',
   stale: 'Hold still for a moment…',
-  not_calibrated: 'Face found. Measuring…',
+  not_calibrated: 'Face found.',
 };
 
 // Why an automatic calibration is still waiting, in plain words (reasons from autoCalibrateCamera).
@@ -33,6 +33,19 @@ const METHOD_TEXT = {
   auto_focal: 'Calibrated automatically (this camera was measured with a tape before).',
   auto: 'Calibrated automatically. The distance is an estimate and can be off by up to about 20%. '
     + 'For a precise distance, check once with a tape below.',
+};
+
+// What the camera step is waiting for while it starts (distance.startDistance stages).
+const STAGE_TEXT = {
+  camera: 'Allow the camera if the browser asks…',
+  tracker: 'Loading the face tracker… (the first time can take a moment)',
+};
+const SLOW_MS = 10000;
+const SLOW_TEXT = {
+  camera: 'The camera has not answered. If there is a camera icon in the address bar, click it and allow the camera. '
+    + 'Close other programs that use the camera, then press Try again.',
+  tracker: 'The face tracker is still loading. On a slow connection this can take a while; if nothing changes, '
+    + 'reload the page or press Try again.',
 };
 
 export function describeReason(reason) {
@@ -60,18 +73,16 @@ export function cameraErrorText(err, { lowPower = isLowPowerDevice() } = {}) {
   if (name === 'NotFoundError' || name === 'DevicesNotFoundError') {
     return 'No camera was found. Connect a camera and press Try again.'
       + pi('On a Raspberry Pi a USB camera should appear by itself (check with: ls /dev/video*). The ribbon-cable '
-        + 'Camera Module is not visible to Chromium until it is set up for browsers (see pi/README.md); or choose '
-        + 'Raspberry Pi in the list and run pi/camera_server.py.');
+        + 'Camera Module is not visible to Chromium until it is set up for browsers (see pi/README.md).');
   }
   if (name === 'OverconstrainedError') return 'The chosen camera is not available any more. Choose another camera in the list.';
   if (name === 'NotReadableError' || name === 'TrackStartError' || name === 'AbortError') {
     return 'Another program is using the camera, or it did not start. Close other programs that use it and press Try again.'
-      + pi('On a Raspberry Pi, pi/camera_server.py also holds the camera while it runs: stop it, or choose '
-        + 'Raspberry Pi in the list to use it.');
+      + pi('On a Raspberry Pi, pi/camera_server.py also holds the camera while it runs: stop it.');
   }
   if (name === 'InsecureContextError') {
     return `${err.message} This page is ${globalThis.location?.origin ?? 'not secure'}. Open the app over https `
-      + '(for example the GitHub Pages address) or on http://localhost, or choose Raspberry Pi in the list.';
+      + '(for example the GitHub Pages address) or on http://localhost.';
   }
   if (name === 'NotSupportedError') return `${err.message} Use a current Chrome, Chromium, Edge, Firefox or Safari.`;
   if (name === 'FaceTrackerError') {
@@ -160,12 +171,8 @@ export function mountCameraStep(container, {
         </label>
         <button type="button" class="small" data-act="power">Turn camera off</button>
       </div>
-      <label class="field pi-address" hidden>
-        <span class="label">Raspberry Pi address</span>
-        <input name="piUrl" autocomplete="off" inputmode="url" placeholder="raspberrypi.local:8000">
-        <small>Leave empty if you opened this page from the Pi. On an https page the Pi server must run with --https (see pi/README.md).</small>
-      </label>
       <p class="hint cam-source-error" role="alert"></p>
+      <div class="row cam-slow" hidden><button type="button" class="small" data-act="retry-slow">Try again</button></div>
 
       <div class="cam-view">
         <video muted playsinline></video>
@@ -232,22 +239,17 @@ export function mountCameraStep(container, {
   const progress = q('.cam-progress');
   const knownMm = () => Number(input('knownMm').value);
 
-  // ----- which camera: this computer's cameras by name, or a Raspberry Pi on the network
+  // ----- which camera: this computer's cameras by name (a Raspberry Pi is not offered any more)
   const select = input('cameraChoice');
-  const piField = q('.pi-address');
   const settings = source.settings;
-  input('piUrl').value = settings.piUrl;
   function fillChoices(cameras) {
-    const current = settings.source === 'pi' ? 'pi'
-      : `local:${settings.deviceId || distance?.activeDeviceId?.() || ''}`;
+    const current = `local:${settings.deviceId || distance?.activeDeviceId?.() || ''}`;
     const options = cameras.map((c) => [`local:${c.deviceId}`, c.label]);
-    if (settings.source === 'local' && !options.some(([v]) => v === current)) {
+    if (!options.some(([v]) => v === current)) {
       options.unshift([current, settings.deviceLabel || (cameras.length ? 'Default camera' : 'This computer’s camera')]);
     }
-    options.push(['pi', 'Raspberry Pi over the network']);
     select.textContent = '';
     for (const [value, label] of options) select.append(new Option(label, value, false, value === current));
-    piField.hidden = select.value !== 'pi';
   }
   fillChoices([]);
   async function refreshChoices() {
@@ -261,15 +263,11 @@ export function mountCameraStep(container, {
   }
   const choose = () => {
     const value = select.value;
-    piField.hidden = value !== 'pi';
-    const next = value === 'pi'
-      ? { source: 'pi', piUrl: input('piUrl').value.trim() }
-      : { source: 'local', piUrl: input('piUrl').value.trim(), deviceId: value.slice('local:'.length),
-        deviceLabel: select.selectedOptions[0]?.textContent ?? '' };
+    const next = { source: 'local', piUrl: '', deviceId: value.slice('local:'.length),
+      deviceLabel: select.selectedOptions[0]?.textContent ?? '' };
     q('.cam-source-error').textContent = onSourceChange(next);
   };
   select.addEventListener('change', choose);
-  input('piUrl').addEventListener('change', choose);
   const onDeviceChange = () => { if (live()) refreshChoices(); else navigator.mediaDevices.removeEventListener('devicechange', onDeviceChange); };
   navigator.mediaDevices?.addEventListener?.('devicechange', onDeviceChange);
 
@@ -283,6 +281,11 @@ export function mountCameraStep(container, {
   q('[data-act=retry]').addEventListener('click', () => {
     q('.cam-source-error').textContent = onSourceChange({ ...settings });
   });
+  const alertRetry = q('.cam-slow');
+  q('[data-act=retry-slow]').addEventListener('click', () => {
+    q('.cam-source-error').textContent = onSourceChange({ ...settings });
+  });
+  let slowTimer = 0;
   function start() {
     showAlert('');
     started = false;
@@ -290,14 +293,32 @@ export function mountCameraStep(container, {
     powerBtn.hidden = false;
     powerBtn.textContent = 'Turn camera off';
     chip.className = 'cam-chip';
-    chip.textContent = settings.source === 'pi' ? 'Connecting to the Raspberry Pi…' : 'Allow the camera if the browser asks…';
     distance.setParticipant(participant);
-    distance.startDistance(video).then(() => {
+    let stage = 'camera';
+    const onStage = (s) => {
+      stage = s;
+      if (!live() || s === 'running') return;
+      chip.textContent = STAGE_TEXT[s];
+    };
+    // Nothing for a while: say what to do instead of waiting silently.
+    clearTimeout(slowTimer);
+    slowTimer = setTimeout(() => {
+      if (!live() || started) return;
+      q('.cam-source-error').textContent = stage === 'camera' ? SLOW_TEXT.camera : SLOW_TEXT.tracker;
+      alertRetry.hidden = false;
+    }, SLOW_MS);
+    distance.startDistance(video, { onStage }).then(() => {
       if (!live()) return;
+      clearTimeout(slowTimer);
+      q('.cam-source-error').textContent = '';
+      alertRetry.hidden = true;
       started = true;
       refreshChoices(); // camera names are known only after permission was given
     }).catch((err) => {
       if (!live()) return;
+      clearTimeout(slowTimer);
+      q('.cam-source-error').textContent = '';
+      alertRetry.hidden = true;
       powerBtn.hidden = true; // "Try again" is the way back
       showAlert(cameraErrorText(err));
       refreshChoices(); // the way out may be another camera
@@ -335,16 +356,20 @@ export function mountCameraStep(container, {
   input('knownMm').addEventListener('input', syncHowto);
 
   let flash = { text: '', until: 0 };
+  // Measured in this visit: every time the step opens, the distance between the eyes is measured again, so an
+  // old calibration (another day, another camera setting) is never used without a fresh measurement.
+  let fresh = false;
   calibrateBtn.addEventListener('click', () => {
     try {
       distance.calibrateCamera(participant, knownMm());
+      fresh = true;
       flash = { text: `Calibrated with a tape at ${knownMm() / 10} cm.`, until: Date.now() + 4000 };
     } catch (err) {
       flash = { text: describeReason(err.message.replace(/^cannot calibrate: /, '')), until: Date.now() + 4000 };
     }
   });
   recalibrateBtn.addEventListener('click', () => {
-    distance.clearCalibration(participant);
+    fresh = false;
     flash = { text: '', until: 0 };
   });
 
@@ -363,25 +388,26 @@ export function mountCameraStep(container, {
       return;
     }
 
-    const d = distance.getDistance(participant || null);
+    let d = distance.getDistance(participant || null);
     const faceOk = d.reason === null || d.reason === 'not_calibrated';
-    let calibrated = Boolean(participant && distance.getK(participant));
-    if (participant && !calibrated && faceOk) {
+    if (participant && !fresh && faceOk) {
       auto = distance.autoCalibrateCamera(participant);
       if (auto.ok) {
-        calibrated = true;
-        flash = { text: `Calibrated automatically: ${Math.round(auto.eyeSpanMm)} mm between the outer eye corners.`, until: Date.now() + 4000 };
+        fresh = true;
+        d = distance.getDistance(participant); // with the new calibration, not the old one
+        flash = { text: `Measured: ${Math.round(auto.eyeSpanMm)} mm between the outer eye corners.`, until: Date.now() + 4000 };
       }
     }
+    const calibrated = Boolean(participant && fresh && distance.getK(participant));
     if (calibrated !== wasCalibrated) {
       wasCalibrated = calibrated;
       onCalibrated?.(calibrated);
     }
 
-    set(chip, 'textContent', d.reason === null ? 'Face found' : describeReason(d.reason));
+    set(chip, 'textContent', faceOk ? 'Face found' : describeReason(d.reason));
     chip.className = `cam-chip ${faceOk ? 'is-ok' : (d.reason === 'stale' ? '' : 'is-warn')}`;
     view.classList.toggle('no-face', d.reason === 'no_face');
-    set(distText, 'textContent', d.ok ? `${Math.round(d.mm / 10)} cm` : '');
+    set(distText, 'textContent', d.ok && calibrated ? `${Math.round(d.mm / 10)} cm` : '');
 
     if (video.videoWidth && canvas.width !== video.videoWidth) {
       canvas.width = video.videoWidth;
