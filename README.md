@@ -71,21 +71,7 @@ with a moving test pattern as the camera.
      camera, so later automatic calibrations with it are precise too. Each camera has its own calibration.
 
 During the test, answer with the arrow keys, or tap or click the arrows on screen. Esc or *Stop* ends the test.
-
-**Answer by turning the head** (camera mode, on by default; a switch in step 3 turns it off). Turn the head
-toward the gap (chin up, chin down, to your left, to your right), hold it for about 0.2 s, then look straight
-again; the arrow that was chosen lights up briefly. During the test the camera is shown small above the ring;
-when it does not see the face it says so. **If you cannot turn your head, or the camera does not work, answer
-with the arrows**: they always work. The first time a camera sees a face in step 3, a short practice (head up,
-then to the left) starts by itself and finds which way each axis goes on that camera; a mirrored camera is
-handled by itself. It can be skipped: then the directions of the raw camera picture are used and the session
-notes say so.
-Only head turns are used, not eye movements: gaze cannot be read reliably from a webcam at 40 cm – 1 m, and
-looking away from the sign would break fixation. The distance is still confirmed when each sign is shown and
-checked until the head starts to move; from then to the end of that trial it is not (turning the head changes
-the eye span the distance is read from). Before the next sign the app waits for the head to come back and the
-distance to be valid again; this wait is not an invalid trial. The session notes say how many answers were
-given by head turn. **Head answers have not been tested on real faces yet.**
+In camera mode the camera is shown small above the ring, and says when it does not see the face.
 
 **Progress** shows the advice for the newest test and the trend against the personal baseline. **History**
 lists every test and exports `sessions.csv` and `trials.csv`.
@@ -97,8 +83,7 @@ A Raspberry Pi 4 can supply the camera; see [pi/README.md](pi/README.md).
 - **Test procedure.** First a fast descent from logMAR 1.3, one sign per level. Then five signs per level in
   0.1 steps, until fewer than three of five are correct. The score is
   logMAR = first main level + 0.1 − 0.02 × correct answers.
-- **No number without trust.** Every counted sign is shown only at a confirmed distance. The test gives no
-  score when:
+- **No number without trust.** The test gives no score when:
   - the screen cannot draw the next level (`floor_hit`);
   - level 1.3 is failed (`worse_than_1.3`);
   - the camera loses the face for five trials in a row (`aborted_camera`);
@@ -149,7 +134,6 @@ npm run test:pi        # Raspberry Pi camera server (Python)
 | `src/setup-flow.js` | Rules of the three-step Test flow |
 | `src/screen-calib.js`, `src/optotype.js`, `src/acuity-test.js`, `src/storage.js` | Screen calibration, ring sizing, test procedure, sessions and export |
 | `src/distance.js`, `src/camera-screen.js`, `src/camera-calib.js` | Distance from the camera (MediaPipe), camera step, Experiment 3 recorder |
-| `src/head-gesture.js` | Answers by head turn: detector, practice, settings |
 | `src/baseline.js`, `src/trend-data.js`, `src/ui-trend.js`, `src/ui-action.js` | Personal baseline, trend chart, advice |
 | `src/pi-camera.js`, `src/camera-source.js`, `pi/` | Raspberry Pi camera |
 | `src/iris.js`, `src/home-scroll.js` | Home screen visuals |

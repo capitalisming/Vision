@@ -10,7 +10,6 @@ import { connectPiCamera, normalizePiUrl } from './pi-camera.js';
 import { loadCameraSettings, saveCameraSettings, cameraId, describeCamera } from './camera-source.js';
 import { STEPS, stepStatus, firstOpenStep, nextStep, stepSummary, loadSetup, saveSetup, suggestDistance, NEAR_MM, FAR_MM } from './setup-flow.js';
 import { renderTrend } from './ui-trend.js';
-import { createHeadInput, loadHeadSettings, signsFor, DEFAULT_HEAD_SIGNS } from './head-gesture.js';
 import { renderAction } from './ui-action.js';
 import { toBaselineSessions, latestAction } from './trend-data.js';
 import { whyThisTestElement } from './why-text.js';
@@ -455,8 +454,6 @@ async function loadDistanceModule() {
 async function startTest(v) {
   let getDistance;
   let cameraMod = null;
-  let headInput = null;
-  let headPractised = false;
   let camera = null;
   if (v.distanceMode === 'manual') {
     const mm = v.targetMm;
@@ -471,20 +468,9 @@ async function startTest(v) {
       cameraMod.setParticipant(v.participant);
       await cameraMod.startDistance($('#camera-video'));
       getDistance = () => cameraMod.getDistance(v.participant);
-      // Answers by head turn: camera mode only, on unless switched off in step 3. Without the practice in step 3
-      // the directions of the raw camera picture are used (noted in the session).
-      const head = loadHeadSettings();
-      if (head.enabled) {
-        const signs = signsFor(head, cameraId(state.camera, location.origin));
-        headPractised = Boolean(signs);
-        headInput = createHeadInput(cameraMod.getHeadLandmarks, signs ?? DEFAULT_HEAD_SIGNS);
-      }
       // The camera is shown small above the ring, with what is wrong with it right now.
       const ui = await import('./camera-screen.js');
-      camera = {
-        video: $('#camera-video'),
-        status: () => ui.testCameraStatus(cameraMod.getDistance(v.participant), Boolean(headInput)),
-      };
+      camera = { video: $('#camera-video'), status: () => ui.testCameraStatus(cameraMod.getDistance(v.participant)) };
     } catch (err) {
       stopCamera();
       const ui = await import('./camera-screen.js');
@@ -502,7 +488,6 @@ async function startTest(v) {
       participant: v.participant, eye: v.eye, glasses: v.glasses, condition: v.condition,
       targetMm: v.targetMm, getDistance, pxPerMm: v.pxPerMm, container: $('#test-root'),
       distanceMode: v.distanceMode,
-      ...(headInput ? { headInput } : {}),
       ...(camera ? { camera } : {}),
     });
   } catch (err) {
@@ -516,10 +501,6 @@ async function startTest(v) {
   state.testRunning = false;
   document.body.classList.remove('testing');
   stopCamera();
-  if (headInput && !headPractised) {
-    session.notes = [session.notes, 'head-turn directions not practised with this camera (default directions)']
-      .filter(Boolean).join('; ');
-  }
   if (cameraMod) {
     session.cam_k = cameraMod.getK(v.participant); // the calibration this distance was measured with
     const method = cameraMod.getCalibrationMethod(v.participant);
@@ -599,14 +580,8 @@ async function mountDistanceStep() {
   } catch {
     label = 'Raspberry Pi (address needed)';
   }
-  let camId = '';
-  try {
-    camId = cameraId(state.camera, location.origin);
-  } catch {
-    // invalid Pi address: the head training waits for a camera that works
-  }
   ui.mountCameraStep(embed, {
-    distance, error, participant, cameraId: camId,
+    distance, error, participant,
     source: { settings: state.camera, label },
     onSourceChange: applyCameraSettings,
     onCalibrated: refreshWizard,
